@@ -114,10 +114,30 @@ NEVER start sentences with: Although, While, Despite, Whereas, Moreover, Further
 
 Keep the meaning EXACTLY the same. Keep the same length or slightly shorter.`;
 
+// Retry with exponential backoff for rate limits
+async function fetchWithRetry(url: string, options: RequestInit, maxRetries: number = 3): Promise<Response> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const response = await fetch(url, options);
+    if (response.status !== 429) return response;
+
+    // Rate limited — wait and retry
+    const retryAfter = response.headers.get("retry-after");
+    const waitMs = retryAfter 
+      ? parseInt(retryAfter) * 1000 
+      : Math.min(2000 * Math.pow(2, attempt), 10000);
+
+    if (attempt < maxRetries) {
+      await new Promise(resolve => setTimeout(resolve, waitMs));
+    }
+  }
+  // Final attempt
+  return fetch(url, options);
+}
+
 async function llmRewrite(text: string, apiKey: string): Promise<string> {
   const charCount = text.length;
 
-  const response = await fetch(`${NVIDIA_API_BASE}/chat/completions`, {
+  const response = await fetchWithRetry(`${NVIDIA_API_BASE}/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
