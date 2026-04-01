@@ -7,6 +7,7 @@ export interface Job {
   input: string;
   output: string;
   fileName: string;
+  fileFormat: string;
   chunksTotal: number;
   chunksDone: number;
   error: string;
@@ -24,7 +25,7 @@ setInterval(() => {
   }
 }, 60 * 60 * 1000);
 
-export function createJob(input: string, fileName: string, totalChunks: number): Job {
+export function createJob(input: string, fileName: string, fileFormat: string, totalChunks: number): Job {
   const id = Math.random().toString(36).slice(2, 10);
   const job: Job = {
     id,
@@ -32,6 +33,7 @@ export function createJob(input: string, fileName: string, totalChunks: number):
     input,
     output: "",
     fileName,
+    fileFormat,
     chunksTotal: totalChunks,
     chunksDone: 0,
     error: "",

@@ -85,14 +85,14 @@ async function processJob(jobId: string) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { text, fileName = "" } = body;
+    const { text, fileName = "", fileFormat = "txt" } = body;
 
     if (!text || typeof text !== "string") {
       return NextResponse.json({ error: "Missing 'text' field" }, { status: 400 });
     }
 
     const chunks = chunkText(text);
-    const job = createJob(text, fileName, chunks.length);
+    const job = createJob(text, fileName, fileFormat, chunks.length);
 
     // Start processing in background (non-blocking)
     processJob(job.id);
@@ -131,6 +131,7 @@ export async function GET(request: NextRequest) {
     output: job.status === "done" ? job.output : "",
     error: job.error,
     fileName: job.fileName,
+    fileFormat: job.fileFormat,
     createdAt: job.createdAt,
   });
 }
