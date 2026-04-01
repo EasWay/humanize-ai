@@ -35,12 +35,16 @@ const TIER1_PATTERNS: [string, string][] = [
   ["\\bpivotal\\b.*\\b(moment|role|factor)\\b", "vocabulary"],
   ["\\bgame[- ]?changer\\b", "vocabulary"],
   ["\\bparadigm shift\\b", "vocabulary"],
+  ["\\bmeticulous(?:ly)?\\b", "vocabulary"],
+  ["\\bintricacies\\b", "vocabulary"],
+  ["\\bunderpinning\\b", "vocabulary"],
   // Sycophancy
   ["great question", "sycophancy"],
   ["that's a great question", "sycophancy"],
   ["interesting question", "sycophancy"],
   ["absolutely[,!]", "sycophancy"],
   ["you're absolutely right", "sycophancy"],
+  ["I appreciate your", "sycophancy"],
   // Chatbot artifacts
   ["I hope this helps", "chatbot"],
   ["I hope this (?:answer|response|explanation)", "chatbot"],
@@ -48,6 +52,8 @@ const TIER1_PATTERNS: [string, string][] = [
   ["don't hesitate to (?:ask|reach out|contact)", "chatbot"],
   ["as an AI", "chatbot"],
   ["as a (?:large )?language model", "chatbot"],
+  ["I don't have personal", "chatbot"],
+  ["I cannot (?:provide|offer|give)", "chatbot"],
   // Structure
   ["in (?:today's|the) (?:rapidly evolving|fast-paced|ever-changing|modern) (?:digital |technological |business )?(?:world|landscape|era)", "structure"],
   ["it's (?:important|crucial|essential|worth noting) to (?:note|understand|remember|acknowledge)", "structure"],
@@ -55,6 +61,11 @@ const TIER1_PATTERNS: [string, string][] = [
   ["in conclusion", "structure"],
   ["to summarize", "structure"],
   ["in summary", "structure"],
+  ["it is worth noting that", "structure"],
+  // Hedging patterns (AI over-hedges)
+  ["it is important to note that", "hedging"],
+  ["it should be noted that", "hedging"],
+  ["one might argue that", "hedging"],
 ];
 
 // === TIER 2: Corporate tells (2 points each) ===
@@ -71,6 +82,9 @@ const TIER2_PATTERNS: [string, string][] = [
   ["\\bcutting[- ]?edge\\b", "corporate"],
   ["\\bstate[- ]?of[- ]?the[- ]?art\\b", "corporate"],
   ["\\bestablished\\b.*\\bnorm\\b", "corporate"],
+  ["\\boptimize\\b", "corporate"],
+  ["\\bscalable\\b", "corporate"],
+  ["\\bactionable\\b", "corporate"],
   // Rule of three (AI loves listing exactly 3 things)
   ["\\b\\w+,\\s+\\w+,\\s+and\\s+\\w+\\b", "structure"],
   // Significance inflation
@@ -78,6 +92,12 @@ const TIER2_PATTERNS: [string, string][] = [
   ["\\btransforms?\\b.*\\blandscape\\b", "corporate"],
   ["\\binnovative\\b.*\\bsolution\\b", "corporate"],
   ["\\bcutting[- ]?edge\\b.*\\btechnology\\b", "corporate"],
+  // Passive voice overuse (AI uses more passive)
+  ["\\bis (?:being |)(?:used|utilized|implemented|developed|created|established)\\b", "passive"],
+  ["\\bcan be (?:seen|found|observed|noted)\\b", "passive"],
+  // Symmetrical structures (AI loves balance)
+  ["not only .{10,50} but also", "symmetry"],
+  ["on one hand .{10,50} on the other hand", "symmetry"],
 ];
 
 // === TIER 3: Weak signals (1 point each) ===

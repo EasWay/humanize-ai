@@ -25,6 +25,8 @@ interface DetectionResponse {
     burstiness: number;
     vocabularyRichness: number;
     structuralVariety: number;
+    semanticCoherence: number;
+    syntacticComplexity: number;
   };
   patternAnalysis: {
     score: number;
@@ -37,6 +39,10 @@ interface DetectionResponse {
       contractionRate: number;
       aiPatternCount: number;
     };
+  };
+  modelFingerprint?: {
+    model: string;
+    confidence: number;
   };
 }
 
@@ -324,13 +330,29 @@ export default function Home() {
               </div>
             </div>
 
+            {/* Model Fingerprint */}
+            {detection.modelFingerprint && (
+              <div className="mb-6 p-3 bg-purple-950/30 border border-purple-800/50 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-purple-300">
+                    Detected Model: <span className="font-semibold uppercase">{detection.modelFingerprint.model}</span>
+                  </div>
+                  <div className="text-xs text-purple-400">
+                    {Math.round(detection.modelFingerprint.confidence * 100)}% confidence
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Detailed Scores */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {[
                 { label: "Perplexity", value: detection.detectorScores.perplexity },
                 { label: "Burstiness", value: detection.detectorScores.burstiness },
                 { label: "Vocabulary", value: detection.detectorScores.vocabularyRichness },
                 { label: "Structure", value: detection.detectorScores.structuralVariety },
+                { label: "Coherence", value: detection.detectorScores.semanticCoherence },
+                { label: "Syntax", value: detection.detectorScores.syntacticComplexity },
               ].map((s) => (
                 <div key={s.label} className="bg-zinc-800/50 rounded-lg p-3">
                   <div className="text-xs text-zinc-500 mb-1">{s.label}</div>
