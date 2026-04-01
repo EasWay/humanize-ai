@@ -3,7 +3,6 @@
 // Only rewrites prose in simple academic English
 
 const NVIDIA_API_BASE = "https://integrate.api.nvidia.com/v1";
-const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
 export interface RewriteOptions {
   text: string;
@@ -116,104 +115,59 @@ NEVER start sentences with: Although, While, Despite, Whereas, Moreover, Further
 
 Keep the meaning EXACTLY the same. Keep the same length or slightly shorter.`;
 
-// Retry with exponential backoff for rate limits
-async function fetchWithRetry(url: string, options: RequestInit, maxRetries: number = 3): Promise<Response> {
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    const response = await fetch(url, options);
-    if (response.status !== 429) return response;
-
-    // Rate limited — wait and retry
-    const retryAfter = response.headers.get("retry-after");
-    const waitMs = retryAfter 
-      ? parseInt(retryAfter) * 1000 
-      : Math.min(2000 * Math.pow(2, attempt), 10000);
-
-    if (attempt < maxRetries) {
-      await new Promise(resolve => setTimeout(resolve, waitMs));
-    }
-  }
-  // Final attempt
-  return fetch(url, options);
-}
-
 async function llmRewrite(text: string, apiKey: string): Promise<string> {
   const charCount = text.length;
 
-  // Try NVIDIA first
-  try {
-    const response = await fetchWithRetry(`${NVIDIA_API_BASE}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "meta/llama-3.3-70b-instruct",
-        messages: [
-          { role: "system", content: ACADEMIC_SYSTEM },
-          {
-            role: "user",
-            content: `Rewrite this academic text (${charCount} chars). Keep placeholder tags intact. Keep same length.\n\n${text}`,
-          },
-        ],
-        temperature: 0.88,
-        max_tokens: Math.min(2048, Math.ceil(charCount * 1.2)),
-        top_p: 0.85,
-        frequency_penalty: 0.7,
-        presence_penalty: 0.5,
-      }),
-    });
+  // Retry with exponential backoff
+  for (let attempt = 0; attempt <= 4; attempt++) {
+    try {
+      const response = await fetch(`${NVIDIA_API_BASE}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: "meta/llama-3.3-70b-instruct",
+          messages: [
+            { role: "system", content: ACADEMIC_SYSTEM },
+            {
+              role: "user",
+              content: `Rewrite this academic text (${charCount} chars). Keep placeholder tags intact. Keep same length.\n\n${text}`,
+            },
+          ],
+          temperature: 0.88,
+          max_tokens: Math.min(2048, Math.ceil(charCount * 1.2)),
+          top_p: 0.85,
+          frequency_penalty: 0.7,
+          presence_penalty: 0.5,
+        }),
+      });
 
-    if (response.ok) {
-      const data = await response.json();
-      return data.choices[0]?.message?.content?.trim() || text;
-    }
+      if (response.ok) {
+        const data = await response.json();
+        return data.choices[0]?.message?.content?.trim() || text;
+      }
 
-    // If rate limited, fall through to Gemini
-    if (response.status !== 429) {
+      // Rate limited — wait and retry
+      if (response.status === 429) {
+        const waitMs = Math.min(5000 * Math.pow(2, attempt), 30000);
+        console.log(`[429] Rate limited, waiting ${waitMs}ms (attempt ${attempt + 1}/5)`);
+        await new Promise(r => setTimeout(r, waitMs));
+        continue;
+      }
+
+      // Other error — throw immediately
       const err = await response.text();
       throw new Error(`NVIDIA API error: ${response.status} — ${err}`);
-    }
-  } catch (e) {
-    // If it's not a rate limit error, rethrow
-    if (!(e instanceof Error && e.message.includes("429"))) {
-      throw e;
+    } catch (e) {
+      if (attempt >= 4) throw e;
+      // Network error — retry
+      await new Promise(r => setTimeout(r, 3000));
     }
   }
 
-  // Fallback: Gemini
-  const geminiKey = process.env.GEMINI_API_KEY;
-  if (!geminiKey) throw new Error("NVIDIA rate limited and no GEMINI_API_KEY configured");
-
-  const geminiResponse = await fetch(
-    `${GEMINI_API_BASE}/gemini-2.0-flash:generateContent?key=${geminiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{
-          role: "user",
-          parts: [{ text: `${ACADEMIC_SYSTEM}\n\nRewrite this academic text. Keep placeholder tags intact. Keep same length.\n\n${text}` }],
-        }],
-        generationConfig: {
-          temperature: 0.88,
-          topP: 0.85,
-          maxOutputTokens: Math.min(2048, Math.ceil(charCount * 1.2)),
-        },
-      }),
-    }
-  );
-
-  if (!geminiResponse.ok) {
-    const err = await geminiResponse.text();
-    throw new Error(`Gemini API error: ${geminiResponse.status} — ${err}`);
-  }
-
-  const geminiData = await geminiResponse.json() as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-  };
-
-  return geminiData.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || text;
+  throw new Error("Max retries exceeded");
 }
 
 // ============================================
