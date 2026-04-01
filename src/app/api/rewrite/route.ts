@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rewriteText, rewriteIterative } from "@/lib/rewrite";
 
-const CHUNK_SIZE = 3000;
+const CHUNK_SIZE = 2000;
 
 // Split text into chunks at paragraph boundaries
 function chunkText(text: string, maxLen: number = CHUNK_SIZE): string[] {

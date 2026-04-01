@@ -133,7 +133,7 @@ async function llmRewrite(text: string, apiKey: string): Promise<string> {
         },
       ],
       temperature: 0.88,
-      max_tokens: Math.min(4096, Math.ceil(charCount * 1.3)),
+      max_tokens: Math.min(2048, Math.ceil(charCount * 1.2)),
       top_p: 0.85,
       frequency_penalty: 0.7,
       presence_penalty: 0.5,
