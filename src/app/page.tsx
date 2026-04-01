@@ -133,11 +133,10 @@ export default function Home() {
         });
         if (!res.ok) throw new Error("Download failed");
         const blob = await res.blob();
-        const baseName = name.replace(/\.[^.]+$/, "");
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `${baseName}_humanized.docx`;
+        a.download = name;
         a.click();
         URL.revokeObjectURL(url);
       } catch {
@@ -149,12 +148,11 @@ export default function Home() {
   };
 
   function downloadTxt(text: string, name: string) {
-    const baseName = name ? name.replace(/\.[^.]+$/, "") : "humanized";
     const blob = new Blob([text], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${baseName}_humanized.txt`;
+    a.download = name || "humanized.txt";
     a.click();
     URL.revokeObjectURL(url);
   }

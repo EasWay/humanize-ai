@@ -49,22 +49,22 @@ export async function POST(request: NextRequest) {
       });
 
       const buffer = await Packer.toBuffer(doc);
-      const baseName = fileName ? fileName.replace(/\.[^.]+$/, "") : "humanized";
+      const baseName = fileName || "document";
 
       return new NextResponse(new Uint8Array(buffer), {
         headers: {
           "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-          "Content-Disposition": `attachment; filename="${baseName}_humanized.docx"`,
+          "Content-Disposition": `attachment; filename="${baseName}.docx"`,
         },
       });
     }
 
     // Default: txt download
-    const baseName = fileName ? fileName.replace(/\.[^.]+$/, "") : "humanized";
+    const baseName = fileName || "document";
     return new NextResponse(text, {
       headers: {
         "Content-Type": "text/plain",
-        "Content-Disposition": `attachment; filename="${baseName}_humanized.txt"`,
+        "Content-Disposition": `attachment; filename="${baseName}"`,
       },
     });
   } catch (error: unknown) {
