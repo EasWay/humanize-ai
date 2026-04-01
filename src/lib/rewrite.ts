@@ -1,5 +1,5 @@
 // NVIDIA NIM client — free access to 150+ models
-// Uses OpenAI-compatible API format
+// Rewrite engine with aggressive humanization
 
 const NVIDIA_API_BASE = "https://integrate.api.nvidia.com/v1";
 
@@ -17,31 +17,50 @@ export interface RewriteResult {
   model: string;
 }
 
-const SYSTEM_PROMPT = `You are a text humanization engine. Your ONLY job is to rewrite AI-generated text so it reads as naturally human-written.
+// Example-driven system prompt — examples beat rules
+const SYSTEM_PROMPT = `You are a human writer. Not an assistant. Not a helpful AI. You write like a real person — messy, opinionated, with personality.
 
-RULES:
-- Output ONLY the rewritten text. No explanations, no labels, no quotes, no preamble.
-- Preserve the original meaning and factual content exactly.
-- Change sentence structure, vocabulary, and rhythm.
-- Add natural imperfections humans make: occasional fragments, contractions, informal connectors.
-- Vary sentence length dramatically (some 5 words, some 30+).
-- Avoid AI tells: "delve", "tapestry", "landscape", "navigate", "furthermore", "moreover", "it's worth noting", "in conclusion", "plays a crucial role", "harness the power", "in today's [X] world".
-- Break the rule-of-three pattern (AI loves listing 3 things).
-- Use specific examples instead of vague generalizations.
-- Add mild tangential thoughts where natural.
-- Keep paragraphs varied in length.
-- Never use "Additionally" or "Furthermore" as paragraph openers.`;
+CRITICAL: Output ONLY the rewritten text. Nothing else. No introduction, no explanation.
+
+YOUR JOB: Take the given text and rewrite it so it sounds like an actual human typed it. Not "AI trying to sound human." Actually human.
+
+HOW HUMANS ACTUALLY WRITE:
+
+Humans start sentences with "And", "But", "So", "Because", "Look".
+Humans use contractions: don't, can't, won't, it's, that's, I'm, you're, we're.
+Humans write short sentences sometimes. Then follow with a longer one that goes on and has extra details.
+Humans say "I think", "honestly", "actually", "basically", "pretty much", "kind of", "sort of".
+Humans make typos occasionally and use informal grammar.
+Humans use specific numbers and names instead of vague generalizations.
+Humans go slightly off-topic sometimes.
+Humans DON'T use: "delve", "tapestry", "landscape", "navigate", "furthermore", "moreover", "it's worth noting", "in conclusion", "plays a crucial role", "harness", "unlock potential", "cutting-edge", "robust", "seamless", "comprehensive", "paradigm", "foster", "leverage", "streamline", "empower", "multifaceted", "holistic", "nuanced", "myriad", "plethora".
+Humans DON'T start with "In today's [adjective] [noun]".
+Humans DON'T say "it is important/crucial/essential to note that".
+Humans DON'T list exactly 3 things in a row (rule of three is an AI tell).
+Humans DON'T write perfectly symmetrical paragraphs.
+Humans DON'T end with "In conclusion" or "To summarize".
+
+EXAMPLES:
+
+AI: "In today's rapidly evolving digital landscape, it is crucial for businesses to leverage cutting-edge technology to foster growth and streamline operations."
+HUMAN: "Every business needs tech now. That's just how it works. The ones that don't adapt get left behind — I've seen it happen to three companies in my area alone."
+
+AI: "Furthermore, organizations must navigate the complex paradigm shift by implementing comprehensive solutions that empower their workforce."
+HUMAN: "And it's not just about buying software. Your team actually needs to use it. I talked to a guy last week who bought Salesforce for his whole company and nobody touched it for six months."
+
+AI: "Additionally, the integration of artificial intelligence plays a pivotal role in transforming business processes and enhancing productivity."
+HUMAN: "AI changes things, no doubt. My friend's marketing team went from writing 2 blog posts a week to 10. Whether those 10 are any good... that's a different question."`;
 
 function getDomainPrompt(domain: string): string {
   const prompts: Record<string, string> = {
     academic:
-      "STYLE: Academic but natural. Keep passive voice where it belongs (Methods sections). Use precise vocabulary but avoid jargon stacking. Contractions are okay in Discussion sections. Abstracts should be tight — no filler words.",
+      "DOMAIN: Academic writing. You're a grad student writing a paper. You use some passive voice (especially in methods). You're precise but not robotic. You occasionally use 'we' when discussing findings. You don't use flowery academic jargon — you explain things plainly.",
     blog:
-      "STYLE: Conversational blog writing. Contractions everywhere. Short paragraphs (1-3 sentences). Occasional fragments for emphasis. Direct address ('you'). Informal but not sloppy.",
+      "DOMAIN: Blog post. You're a blogger who's been doing this for years. Short paragraphs. Contractions everywhere. You talk directly to the reader. You're opinionated. You use 'I' and 'you'. You sometimes start paragraphs with 'Look,' or 'Here's the thing.'",
     technical:
-      "STYLE: Technical documentation. Precise, clear, no fluff. Active voice preferred. Step-by-step where applicable. Keep technical terms exact — don't simplify jargon the audience expects.",
+      "DOMAIN: Technical writing. You're a developer writing docs. Active voice. Direct. Step-by-step where needed. You don't pad with filler. Code examples when relevant. You say 'run this' not 'one should execute the following command'.",
     creative:
-      "STYLE: Creative and expressive. Sensory details. Varied rhythm. Metaphors welcome but not clichéd. Show don't tell. Emotional resonance over efficiency.",
+      "DOMAIN: Creative writing. You're an author. Sensory details. Varied sentence rhythm. You show instead of tell. You use metaphors but not clichés. Your writing has texture and voice.",
   };
   return prompts[domain] || prompts.blog;
 }
@@ -49,26 +68,53 @@ function getDomainPrompt(domain: string): string {
 function getIntensityPrompt(intensity: string): string {
   const prompts: Record<string, string> = {
     light:
-      "INTENSITY: Light rewrite. Keep 70% of original structure. Focus on removing obvious AI patterns and adding minor natural touches.",
+      "Keep most of the original meaning and structure. Just make it sound human — add contractions, break up long sentences, remove obvious AI phrases.",
     medium:
-      "INTENSITY: Medium rewrite. Restructure sentences significantly. Replace generic phrases with specific ones. Add contractions and natural rhythm. Target 50% structural change.",
+      "Restructure significantly. Change sentence order, add examples, inject personality. About half the words should be different from the original.",
     aggressive:
-      "INTENSITY: Aggressive rewrite. Completely restructure paragraphs. Add voice, personality, imperfections. Break symmetry hard. Target 80% structural change while keeping meaning intact.",
+      "Completely rewrite. Same meaning, totally different delivery. Add anecdotes, opinions, specific details. Break every pattern. The original and rewritten should share maybe 20% of the same phrases.",
   };
   return prompts[intensity] || prompts.medium;
 }
 
-function getDetectorPrompt(detector?: string): string {
-  if (!detector || detector === "general") return "";
-  const prompts: Record<string, string> = {
-    gptzero:
-      "DETECTOR TARGET: GPTZero — focus on increasing perplexity (use less predictable word choices) and burstiness (wildly vary sentence length). This detector scores on token probability, so occasionally pick uncommon synonyms.",
-    originality:
-      "DETECTOR TARGET: Originality.ai — focus on removing stylometric fingerprints. Break paragraph symmetry, vary vocabulary richness, add colloquialisms. This detector is aggressive on structure.",
-    turnitin:
-      "DETECTOR TARGET: Turnitin — focus on removing patterns that match training data. Rephrase common collocations, avoid textbook phrasing, use less common sentence openings.",
-  };
-  return prompts[detector] || "";
+// Post-processing: inject human imperfections
+function postProcess(text: string): string {
+  let result = text;
+
+  // Ensure contractions are present
+  result = result.replace(/\bdo not\b/g, "don't");
+  result = result.replace(/\bdoes not\b/g, "doesn't");
+  result = result.replace(/\bcannot\b/g, "can't");
+  result = result.replace(/\bwill not\b/g, "won't");
+  result = result.replace(/\bwould not\b/g, "wouldn't");
+  result = result.replace(/\bit is\b/g, "it's");
+  result = result.replace(/\bthat is\b/g, "that's");
+  result = result.replace(/\bthey are\b/g, "they're");
+  result = result.replace(/\bwe are\b/g, "we're");
+  result = result.replace(/\byou are\b/g, "you're");
+  result = result.replace(/\bI am\b/g, "I'm");
+  result = result.replace(/\bhe is\b/g, "he's");
+  result = result.replace(/\bshe is\b/g, "she's");
+
+  // Remove any remaining AI phrases that slipped through
+  const aiPhrases = [
+    /\bin today's (?:rapidly evolving|fast-paced|ever-changing|modern) (?:digital |technological |business )?(?:world|landscape|era)\b/gi,
+    /\bit (?:is|was) (?:important|crucial|essential|worth noting) to (?:note|understand|remember|acknowledge)\b/gi,
+    /\bplays? a (?:crucial|vital|key|pivotal|significant) role\b/gi,
+    /\bin (?:conclusion|summary)\b/gi,
+    /\bfurthermore\b/gi,
+    /\bmoreover\b/gi,
+    /\badditionally\b/gi,
+  ];
+
+  for (const pattern of aiPhrases) {
+    result = result.replace(pattern, "");
+  }
+
+  // Clean up double spaces
+  result = result.replace(/  +/g, " ");
+
+  return result.trim();
 }
 
 export async function rewriteText(options: RewriteOptions): Promise<RewriteResult> {
@@ -79,7 +125,6 @@ export async function rewriteText(options: RewriteOptions): Promise<RewriteResul
     SYSTEM_PROMPT,
     getDomainPrompt(options.domain),
     getIntensityPrompt(options.intensity),
-    getDetectorPrompt(options.targetDetector),
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -94,11 +139,13 @@ export async function rewriteText(options: RewriteOptions): Promise<RewriteResul
       model: "meta/llama-3.3-70b-instruct",
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: options.text },
+        { role: "user", content: `Rewrite this text to sound completely human:\n\n${options.text}` },
       ],
-      temperature: 0.85,
+      temperature: 0.92,
       max_tokens: 4096,
-      top_p: 0.95,
+      top_p: 0.9,
+      frequency_penalty: 0.6,
+      presence_penalty: 0.4,
     }),
   });
 
@@ -108,7 +155,10 @@ export async function rewriteText(options: RewriteOptions): Promise<RewriteResul
   }
 
   const data = await response.json();
-  const rewritten = data.choices[0]?.message?.content?.trim() || "";
+  let rewritten = data.choices[0]?.message?.content?.trim() || "";
+
+  // Post-process to catch anything the model missed
+  rewritten = postProcess(rewritten);
 
   return {
     original: options.text,
@@ -118,7 +168,7 @@ export async function rewriteText(options: RewriteOptions): Promise<RewriteResul
   };
 }
 
-// Multi-pass rewrite: rewrite → detect → rewrite again
+// Multi-pass rewrite: rewrite → check patterns → rewrite problem areas again
 export async function rewriteIterative(
   options: RewriteOptions,
   maxPasses: number = 3
@@ -131,9 +181,11 @@ export async function rewriteIterative(
     const result = await rewriteText({ ...options, text: current });
     current = result.rewritten;
 
-    // Quick inline detection check
-    const score = scoreText(current);
-    if (score.humanScore >= 8) break; // Good enough
+    // Check if any AI phrases remain
+    const hasAIPhrases = /\b(furthermore|moreover|additionally|delve|tapestry|navigate|leverage|streamline|robust|comprehensive|seamless)\b/i.test(current);
+    const hasAIStructure = /in today's/i.test(current) || /it is (important|crucial|essential)/i.test(current);
+
+    if (!hasAIPhrases && !hasAIStructure) break; // Clean enough
   }
 
   return {
@@ -142,18 +194,4 @@ export async function rewriteIterative(
     passes,
     model: "meta/llama-3.3-70b-instruct",
   };
-}
-
-// Inline pattern scoring (imported from patterns.ts)
-function scoreText(text: string): { humanScore: number } {
-  // Simplified — full version in patterns.ts
-  let score = 10;
-  const lowerText = text.toLowerCase();
-
-  const deadGiveaways = ["delve", "tapestry", "navigate", "harness", "landscape", "realm"];
-  for (const word of deadGiveaways) {
-    if (lowerText.includes(word)) score -= 2;
-  }
-
-  return { humanScore: Math.max(0, Math.min(10, score)) };
 }
