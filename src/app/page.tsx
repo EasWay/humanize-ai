@@ -120,22 +120,20 @@ export default function Home() {
   // Download output — preserves original format
   const handleDownload = async () => {
     if (!job?.output) return;
+    const fmt = job.fileFormat || fileFormat || "txt";
+    const name = job.fileName || fileName || "humanized";
 
-    if (job.fileFormat === "docx") {
+    if (fmt === "docx" || fmt === "pdf") {
       // Generate .docx via API
       try {
         const res = await fetch("/api/download", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text: job.output,
-            format: "docx",
-            fileName: job.fileName || fileName,
-          }),
+          body: JSON.stringify({ text: job.output, format: "docx", fileName: name }),
         });
         if (!res.ok) throw new Error("Download failed");
         const blob = await res.blob();
-        const baseName = (job.fileName || fileName).replace(/\.[^.]+$/, "");
+        const baseName = name.replace(/\.[^.]+$/, "");
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
@@ -143,11 +141,10 @@ export default function Home() {
         a.click();
         URL.revokeObjectURL(url);
       } catch {
-        // Fallback to txt
-        downloadTxt(job.output, job.fileName || fileName);
+        downloadTxt(job.output, name);
       }
     } else {
-      downloadTxt(job.output, job.fileName || fileName);
+      downloadTxt(job.output, name);
     }
   };
 
