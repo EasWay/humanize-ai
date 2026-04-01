@@ -49,7 +49,7 @@ const BASE_RULES = `
 CRITICAL ANTI-DETECTION RULES:
 - Keep the same meaning and roughly the same length
 - Use contractions HEAVILY (don't, can't, it's, you're, I've, we'll, they'd)
-- NEVER use: furthermore, moreover, additionally, delve, tapestry, landscape, navigate, leverage, streamline, empower, pivotal, crucial, vital, holistic, multifaceted, paradigm, foster, harness, comprehensive, robust, seamless, cutting-edge, state-of-the-art, in today's, it is important to, plays a role, game-changer, meticulous, intricacies, underpinning
+- NEVER use: furthermore, moreover, additionally, delve, tapestry, landscape, navigate, leverage, streamline, empower, pivotal, crucial, vital, holistic, multifaceted, paradigm, foster, harness, comprehensive, robust, seamless, cutting-edge, state-of-the-art, in today's, it is important to, plays a role, game-changer, meticulous, intricacies, underpinning, hence, thus, consequently, while that's happening, here's the thing, truth be told, all things considered, at the end of the day, when it comes to, the fact of the matter is, needless to say, it goes without saying
 - Vary sentence length WILDLY (some 3 words, some 30+)
 - Add specific details, numbers, names, examples
 - The text MUST have HIGH PERPLEXITY (unpredictable word choices)
@@ -70,7 +70,10 @@ CRITICAL ANTI-DETECTION RULES:
 - Break grammar rules intentionally for emphasis
 - Add filler words occasionally (honestly, basically, literally)
 - Create run-on sentences sometimes, connecting multiple thoughts with commas or semicolons, just like people do when they're thinking out loud
-- Then follow with. Fragments.`;
+- Then follow with. Fragments.
+- Add grammatical imperfections: drop articles occasionally, use comma splices, start with And/But
+- Use "gonna", "wanna", "gotta", "kinda" sparingly
+- Include one typo per paragraph max (humans make typos)`;
 
 // ============================================
 // LAYER 1: Persona-based LLM Rewrite
@@ -453,6 +456,19 @@ function postProcess(text: string): string {
     /\bfurthermore[,.]?\s/gi,
     /\bmoreover[,.]?\s/gi,
     /\badditionally[,.]?\s/gi,
+    /\bhence[,.]?\s/gi,
+    /\bthus[,.]?\s/gi,
+    /\bconsequently[,.]?\s/gi,
+    /\bwhile that's happening[,.]?\s/gi,
+    /\bhere's the thing:?\s/gi,
+    /\btruth be told[,.]?\s/gi,
+    /\ball things considered[,.]?\s/gi,
+    /\bat the end of the day[,.]?\s/gi,
+    /\bwhen it comes to\s/gi,
+    /\bthe fact of the matter is\s/gi,
+    /\bneedless to say[,.]?\s/gi,
+    /\bit goes without saying\s/gi,
+    /\bas a matter of fact[,.]?\s/gi,
   ];
 
   for (const pattern of kill) {
