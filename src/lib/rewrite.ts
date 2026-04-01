@@ -4,6 +4,10 @@
 
 const NVIDIA_API_BASE = "https://integrate.api.nvidia.com/v1";
 
+// Gemini fallback for when NVIDIA rate limits
+const GEMINI_KEY = process.env.GEMINI_API_KEY || "";
+const GEMINI_MODEL = "gemini-2.5-flash";
+
 export interface RewriteOptions {
   text: string;
   domain: "academic";
@@ -167,7 +171,37 @@ async function llmRewrite(text: string, apiKey: string): Promise<string> {
     }
   }
 
-  throw new Error("Max retries exceeded");
+  // NVIDIA exhausted all retries — fallback to Gemini
+  if (GEMINI_KEY) {
+    console.log("[Fallback] Switching to Gemini");
+    const geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{
+            role: "user",
+            parts: [{ text: `${ACADEMIC_SYSTEM}\n\nRewrite this academic text. Keep placeholder tags intact.\n\n${text}` }],
+          }],
+          generationConfig: {
+            temperature: 0.88,
+            topP: 0.85,
+            maxOutputTokens: Math.min(2048, Math.ceil(charCount * 1.2)),
+          },
+        }),
+      }
+    );
+
+    if (geminiRes.ok) {
+      const data = await geminiRes.json() as {
+        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+      };
+      return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || text;
+    }
+  }
+
+  throw new Error("All providers failed");
 }
 
 // ============================================
