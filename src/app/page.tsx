@@ -11,6 +11,7 @@ interface JobStatus {
   output: string;
   error: string;
   fileName: string;
+  fileFormat: string;
 }
 
 export default function Home() {
@@ -42,6 +43,7 @@ export default function Home() {
     setUploading(true);
     setError("");
     setFileName(file.name);
+    setFileFormat(ext || "txt");
     setJobId(null);
     setJob(null);
 
@@ -71,7 +73,7 @@ export default function Home() {
       const res = await fetch("/api/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: input, fileName }),
+        body: JSON.stringify({ text: input, fileName, fileFormat }),
       });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
@@ -115,18 +117,50 @@ export default function Home() {
     if (job?.output) navigator.clipboard.writeText(job.output);
   };
 
-  // Download output
-  const handleDownload = () => {
+  // Download output — preserves original format
+  const handleDownload = async () => {
     if (!job?.output) return;
-    const baseName = fileName ? fileName.replace(/\.[^.]+$/, "") : "humanized";
-    const blob = new Blob([job.output], { type: "text/plain" });
+
+    if (job.fileFormat === "docx") {
+      // Generate .docx via API
+      try {
+        const res = await fetch("/api/download", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: job.output,
+            format: "docx",
+            fileName: job.fileName || fileName,
+          }),
+        });
+        if (!res.ok) throw new Error("Download failed");
+        const blob = await res.blob();
+        const baseName = (job.fileName || fileName).replace(/\.[^.]+$/, "");
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${baseName}_humanized.docx`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch {
+        // Fallback to txt
+        downloadTxt(job.output, job.fileName || fileName);
+      }
+    } else {
+      downloadTxt(job.output, job.fileName || fileName);
+    }
+  };
+
+  function downloadTxt(text: string, name: string) {
+    const baseName = name ? name.replace(/\.[^.]+$/, "") : "humanized";
+    const blob = new Blob([text], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     a.download = `${baseName}_humanized.txt`;
     a.click();
     URL.revokeObjectURL(url);
-  };
+  }
 
   return (
     <div className="min-h-screen bg-white text-zinc-900 font-sans">
@@ -291,7 +325,7 @@ export default function Home() {
             {/* New Job Button */}
             {(job.status === "done" || job.status === "error") && (
               <button
-                onClick={() => { setJobId(null); setJob(null); setInput(""); setFileName(""); }}
+                onClick={() => { setJobId(null); setJob(null); setInput(""); setFileName(""); setFileFormat("txt"); }}
                 className="w-full px-5 py-3 bg-zinc-100 hover:bg-zinc-200 text-sm font-medium rounded-xl transition"
               >
                 Humanize Another Document
