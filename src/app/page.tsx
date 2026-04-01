@@ -165,26 +165,36 @@ export default function Home() {
 
       setSteps(prev => prev.map((s, i) => i === 2 ? { ...s, status: "active", chunks: finalChunks.length, current: 0 } : s));
 
+      // Retry wrapper for rate limits
+      async function fetchWithRetry(body: string, maxRetries = 3): Promise<{ rewritten: string }> {
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+          const res = await fetch("/api/rewrite", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body,
+          });
+          if (res.ok) return res.json();
+          if (res.status === 429 && attempt < maxRetries) {
+            const wait = Math.min(3000 * Math.pow(2, attempt), 15000);
+            await new Promise(r => setTimeout(r, wait));
+            continue;
+          }
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || `Request failed`);
+        }
+        throw new Error("Max retries exceeded");
+      }
+
       const rewrittenChunks: string[] = [];
       for (let i = 0; i < finalChunks.length; i++) {
         setSteps(prev => prev.map((s, idx) => idx === 2 ? { ...s, current: i + 1 } : s));
 
-        const res = await fetch("/api/rewrite", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: finalChunks[i] }),
-        });
-
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.error || `Chunk ${i + 1} failed`);
-        }
-
-        const data = await res.json();
+        const data = await fetchWithRetry(JSON.stringify({ text: finalChunks[i] }));
         rewrittenChunks.push(data.rewritten);
 
+        // 2 second delay between chunks to respect rate limits
         if (i < finalChunks.length - 1) {
-          await new Promise(r => setTimeout(r, 1000));
+          await new Promise(r => setTimeout(r, 2000));
         }
       }
 
