@@ -78,14 +78,18 @@ async function rewriteSentences(sentences: string[], apiKey: string): Promise<st
 ${batchText}`;
 
   let rewritten = "";
-  try {
-    rewritten = await callNVIDIA(prompt, apiKey);
-  } catch {
-    if (GEMINI_KEY) {
+  let usedModel = "gemini-2.5-flash";
+
+  if (GEMINI_KEY) {
+    try {
       rewritten = await callGemini(prompt);
-    } else {
-      return sentences; // fallback: return original
+    } catch {
+      rewritten = await callNVIDIA(prompt, apiKey);
+      usedModel = "meta/llama-3.3-70b-instruct";
     }
+  } else {
+    rewritten = await callNVIDIA(prompt, apiKey);
+    usedModel = "meta/llama-3.3-70b-instruct";
   }
 
   // Parse rewritten sentences back

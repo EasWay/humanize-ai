@@ -85,6 +85,23 @@ export default function Home() {
     }
   }, [input, fileName]);
 
+  // Auto-resume last job on mount
+  useEffect(() => {
+    if (jobId) return; // already have a job
+    fetch("/api/last-job").then(res => {
+      if (!res.ok) return;
+      return res.json();
+    }).then(data => {
+      if (!data) return;
+      if (data.status === "done" || data.status === "error" || data.status === "processing" || data.status === "queued") {
+        setJobId(data.id);
+        setJob(data);
+        if (data.fileName) setFileName(data.fileName);
+        if (data.fileFormat) setFileFormat(data.fileFormat);
+      }
+    }).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Poll job status
   useEffect(() => {
     if (!jobId) return;
