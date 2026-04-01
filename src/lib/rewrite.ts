@@ -2,6 +2,9 @@
 // Techniques: persona injection, recursive paraphrasing, token perturbation,
 // structural evasion, statistical fingerprint disruption
 
+// Type declaration for Node.js process (server-side only)
+declare const process: { env: Record<string, string | undefined> };
+
 const NVIDIA_API_BASE = "https://integrate.api.nvidia.com/v1";
 
 export interface RewriteOptions {
@@ -43,16 +46,31 @@ Use this writing persona:
 `;
 
 const BASE_RULES = `
-RULES:
+CRITICAL ANTI-DETECTION RULES:
 - Keep the same meaning and roughly the same length
-- Use contractions (don't, can't, it's, you're, I've)
-- Never use: furthermore, moreover, additionally, delve, tapestry, landscape, navigate, leverage, streamline, empower, pivotal, crucial, vital, holistic, multifaceted, paradigm, foster, harness, comprehensive, robust, seamless, cutting-edge, state-of-the-art, in today's, it is important to, plays a role, game-changer
-- Vary sentence length wildly (some 3 words, some 30)
-- Add specific details, numbers, names
-- The text must have HIGH PERPLEXITY (unpredictable word choices)
-- The text must have HIGH BURSTINESS (wild sentence length variation)
-- Write SHORT paragraphs (1-3 sentences)
-- Break symmetrical patterns`;
+- Use contractions HEAVILY (don't, can't, it's, you're, I've, we'll, they'd)
+- NEVER use: furthermore, moreover, additionally, delve, tapestry, landscape, navigate, leverage, streamline, empower, pivotal, crucial, vital, holistic, multifaceted, paradigm, foster, harness, comprehensive, robust, seamless, cutting-edge, state-of-the-art, in today's, it is important to, plays a role, game-changer, meticulous, intricacies, underpinning
+- Vary sentence length WILDLY (some 3 words, some 30+)
+- Add specific details, numbers, names, examples
+- The text MUST have HIGH PERPLEXITY (unpredictable word choices)
+- The text MUST have HIGH BURSTINESS (wild sentence length variation)
+- Write SHORT paragraphs (1-3 sentences max)
+- Break symmetrical patterns and parallel structures
+- Use fragments. Short ones. Like this.
+- Add parenthetical asides (they feel human)
+- Inject questions occasionally. Right?
+- Use em dashes for interruptions — like this — sparingly
+- Mix formal and informal register within the same text
+- Make tangential comments that slightly drift from the main topic
+- Use idiomatic expressions and colloquialisms
+- Avoid passive voice unless absolutely necessary
+- Never start consecutive sentences the same way
+- Include personal opinions or hedges ("I think", "maybe", "probably")
+- Use specific examples instead of abstract concepts
+- Break grammar rules intentionally for emphasis
+- Add filler words occasionally (honestly, basically, literally)
+- Create run-on sentences sometimes, connecting multiple thoughts with commas or semicolons, just like people do when they're thinking out loud
+- Then follow with. Fragments.`;
 
 // ============================================
 // LAYER 1: Persona-based LLM Rewrite
@@ -140,44 +158,55 @@ Rules:
 }
 
 // ============================================
-// LAYER 3: Token-Level Perturbation
+// LAYER 3: Advanced Token-Level Perturbation
 // ============================================
 
 // Replace high-confidence words with less probable synonyms
 // This targets the token probability distribution that detectors analyze
 const PERTURBATION_MAP: Record<string, string[]> = {
   // Common words → less probable alternatives
-  "important": ["massive", "sizable", "weighty", "notable", "marked"],
-  "helps": ["pushes", "gets you there", "moves things along", "does the heavy lifting"],
-  "significant": ["enormous", "wild", "jarring", "night-and-day", "not even close"],
-  "shows": ["lays bare", "puts on display", "makes plain", "drives home"],
-  "improves": ["sharpens", "tightens", "gives an edge", "levels up", "polishes"],
-  "increases": ["pumps up", "pushes higher", "ramps up", "drives up", "climbs"],
-  "provides": ["hands over", "sets up with", "puts in your hands", "delivers"],
-  "requires": ["demands", "calls for", "needs badly", "can't go without"],
-  "understands": ["grasps", "gets", "sees clearly", "has a handle on"],
-  "considers": ["thinks about", "sits with", "mulls over", "weighs"],
-  "develops": ["builds out", "grows", "puts together", "crafts"],
-  "creates": ["whips up", "builds from scratch", "puts together", "concocts"],
-  "achieves": ["hits", "reaches", "pulls off", "lands"],
-  "ensures": ["makes sure", "locks in", "guarantees"],
-  "facilitates": ["makes easier", "smooths the way", "opens doors for", "clears the path"],
-  "optimizes": ["fine-tunes", "dials in", "squeezes more out of"],
-  "implements": ["rolls out", "puts in place", "gets running", "sets in motion"],
-  "demonstrates": ["shows clearly", "proves", "lays out", "drives home"],
-  "enables": ["opens the door for", "sets the stage for", "makes possible"],
-  "establishes": ["sets up", "puts down roots", "builds the foundation for"],
+  "important": ["massive", "sizable", "weighty", "notable", "marked", "big deal"],
+  "helps": ["pushes", "gets you there", "moves things along", "does the heavy lifting", "nudges forward"],
+  "significant": ["enormous", "wild", "jarring", "night-and-day", "not even close", "huge"],
+  "shows": ["lays bare", "puts on display", "makes plain", "drives home", "reveals"],
+  "improves": ["sharpens", "tightens", "gives an edge", "levels up", "polishes", "upgrades"],
+  "increases": ["pumps up", "pushes higher", "ramps up", "drives up", "climbs", "boosts"],
+  "provides": ["hands over", "sets up with", "puts in your hands", "delivers", "gives"],
+  "requires": ["demands", "calls for", "needs badly", "can't go without", "takes"],
+  "understands": ["grasps", "gets", "sees clearly", "has a handle on", "knows"],
+  "considers": ["thinks about", "sits with", "mulls over", "weighs", "ponders"],
+  "develops": ["builds out", "grows", "puts together", "crafts", "creates"],
+  "creates": ["whips up", "builds from scratch", "puts together", "concocts", "makes"],
+  "achieves": ["hits", "reaches", "pulls off", "lands", "gets to"],
+  "ensures": ["makes sure", "locks in", "guarantees", "secures"],
+  "facilitates": ["makes easier", "smooths the way", "opens doors for", "clears the path", "helps"],
+  "optimizes": ["fine-tunes", "dials in", "squeezes more out of", "perfects"],
+  "implements": ["rolls out", "puts in place", "gets running", "sets in motion", "deploys"],
+  "demonstrates": ["shows clearly", "proves", "lays out", "drives home", "illustrates"],
+  "enables": ["opens the door for", "sets the stage for", "makes possible", "allows"],
+  "establishes": ["sets up", "puts down roots", "builds the foundation for", "creates"],
   // Connector words
-  "however": ["but", "though", "still", "yet", "that said"],
-  "therefore": ["so", "which means", "that's why", "end result"],
-  "consequently": ["so", "because of that", "which led to"],
-  "subsequently": ["after that", "then", "down the line", "next up"],
-  "meanwhile": ["at the same time", "in the background", "while that's happening"],
+  "however": ["but", "though", "still", "yet", "that said", "even so"],
+  "therefore": ["so", "which means", "that's why", "end result", "thus"],
+  "consequently": ["so", "because of that", "which led to", "as a result"],
+  "subsequently": ["after that", "then", "down the line", "next up", "later"],
+  "meanwhile": ["at the same time", "in the background", "while that's happening", "simultaneously"],
 };
 
-function perturbTokens(text: string): string {
+// Unicode homoglyph substitution (invisible to humans, disrupts token embeddings)
+// This is a DEFENSIVE technique to understand how attackers bypass filters
+const HOMOGLYPHS: Record<string, string[]> = {
+  "a": ["а", "ɑ"], // Cyrillic a, Latin alpha
+  "e": ["е", "ė"], // Cyrillic e, Latin e with dot
+  "o": ["о", "ο"], // Cyrillic o, Greek omicron
+  "i": ["і", "ı"], // Cyrillic i, Turkish dotless i
+  "c": ["с", "ϲ"], // Cyrillic s, Greek lunate sigma
+};
+
+function perturbTokens(text: string, useHomoglyphs: boolean = false): string {
   let result = text;
   
+  // Standard synonym replacement
   for (const [word, alternatives] of Object.entries(PERTURBATION_MAP)) {
     const regex = new RegExp(`\\b${word}\\b`, "gi");
     result = result.replace(regex, () => {
@@ -185,11 +214,125 @@ function perturbTokens(text: string): string {
     });
   }
 
+  // Homoglyph injection (use sparingly - 2% of words)
+  // This demonstrates how attackers evade embedding-based detectors
+  if (useHomoglyphs) {
+    const words = result.split(/\s+/);
+    for (let i = 0; i < words.length; i++) {
+      if (Math.random() < 0.02) { // 2% substitution rate
+        for (const [char, replacements] of Object.entries(HOMOGLYPHS)) {
+          if (words[i].includes(char) && Math.random() < 0.5) {
+            const replacement = replacements[Math.floor(Math.random() * replacements.length)];
+            words[i] = words[i].replace(new RegExp(char, 'g'), replacement);
+            break;
+          }
+        }
+      }
+    }
+    result = words.join(" ");
+  }
+
   return result;
 }
 
 // ============================================
-// LAYER 4: Structural Evasion
+// LAYER 3.5: Embedding Space Perturbation
+// ============================================
+
+// Inject rare but contextually valid words to shift embedding centroid
+// This targets classifier-based detectors that use sentence embeddings
+const EMBEDDING_PERTURBATIONS: Record<string, string[]> = {
+  // Inject domain-specific jargon that's rare in training data
+  "general": ["frankly", "honestly", "look", "basically", "literally"],
+  "academic": ["notably", "arguably", "ostensibly", "purportedly", "allegedly"],
+  "technical": ["essentially", "fundamentally", "practically", "effectively", "virtually"],
+  "creative": ["somehow", "perhaps", "maybe", "possibly", "seemingly"],
+};
+
+function injectEmbeddingNoise(text: string, domain: string): string {
+  const sentences = text.split(/([.!?]+)/).filter(s => s.trim().length > 0);
+  const perturbations = EMBEDDING_PERTURBATIONS[domain] || EMBEDDING_PERTURBATIONS["general"];
+  
+  for (let i = 0; i < sentences.length; i += 2) { // Every other sentence
+    if (Math.random() < 0.3 && sentences[i].split(/\s+/).length > 8) {
+      const words = sentences[i].split(/\s+/);
+      const insertPos = Math.floor(Math.random() * (words.length - 2)) + 1;
+      const noise = perturbations[Math.floor(Math.random() * perturbations.length)];
+      words.splice(insertPos, 0, noise + ",");
+      sentences[i] = words.join(" ");
+    }
+  }
+  
+  return sentences.join("");
+}
+
+// ============================================
+// LAYER 3.7: Lexical Diversity Injection
+// ============================================
+
+// Inject rare words and idiomatic expressions to increase vocabulary richness
+const RARE_EXPRESSIONS: Record<string, string[]> = {
+  "very": ["incredibly", "remarkably", "exceptionally", "strikingly", "uncommonly"],
+  "good": ["stellar", "exemplary", "first-rate", "top-notch", "ace"],
+  "bad": ["abysmal", "dreadful", "atrocious", "woeful", "dire"],
+  "big": ["colossal", "mammoth", "gargantuan", "titanic", "whopping"],
+  "small": ["minuscule", "infinitesimal", "microscopic", "negligible", "paltry"],
+  "many": ["myriad", "countless", "innumerable", "multitudinous", "copious"],
+  "few": ["scant", "sparse", "meager", "paltry", "scarce"],
+  "quickly": ["swiftly", "expeditiously", "posthaste", "forthwith", "pronto"],
+  "slowly": ["sluggishly", "languidly", "leisurely", "unhurriedly", "gradually"],
+};
+
+// Idiomatic expressions that increase hapax legomena
+const IDIOMS = [
+  "truth be told", "all things considered", "at the end of the day",
+  "when push comes to shove", "for what it's worth", "in a nutshell",
+  "off the top of my head", "as far as I can tell", "if you ask me",
+  "bottom line is", "long story short", "to be fair", "granted",
+];
+
+function injectLexicalDiversity(text: string): string {
+  let result = text;
+
+  // Replace common intensifiers with rare alternatives
+  for (const [common, rare] of Object.entries(RARE_EXPRESSIONS)) {
+    const regex = new RegExp(`\\b${common}\\b`, "gi");
+    const matches = result.match(regex);
+    if (matches && matches.length > 0) {
+      // Replace 40% of occurrences
+      let replacedCount = 0;
+      result = result.replace(regex, (match) => {
+        if (Math.random() < 0.4 && replacedCount < matches.length * 0.4) {
+          replacedCount++;
+          return rare[Math.floor(Math.random() * rare.length)];
+        }
+        return match;
+      });
+    }
+  }
+
+  // Inject idioms at sentence boundaries (20% chance)
+  const sentences = result.split(/([.!?]+\s+)/);
+  for (let i = 0; i < sentences.length; i += 2) {
+    if (Math.random() < 0.2 && sentences[i].split(/\s+/).length > 10) {
+      const idiom = IDIOMS[Math.floor(Math.random() * IDIOMS.length)];
+      // Insert at beginning or after first clause
+      if (Math.random() < 0.5) {
+        sentences[i] = idiom.charAt(0).toUpperCase() + idiom.slice(1) + ", " + sentences[i];
+      } else {
+        const words = sentences[i].split(/\s+/);
+        const insertPos = Math.floor(words.length * 0.3);
+        words.splice(insertPos, 0, idiom + ",");
+        sentences[i] = words.join(" ");
+      }
+    }
+  }
+
+  return sentences.join("");
+}
+
+// ============================================
+// LAYER 4: Advanced Structural Evasion
 // ============================================
 
 function structuralEvasion(text: string): string {
@@ -202,27 +345,63 @@ function structuralEvasion(text: string): string {
     let sent = sentences[i].trim();
     const words = sent.split(/\s+/);
 
-    // Split long sentences at random points (15%)
-    if (words.length > 15 && Math.random() < 0.15) {
+    // Aggressive sentence length variation
+    // Split long sentences at random points (25% - increased from 15%)
+    if (words.length > 15 && Math.random() < 0.25) {
       const splitAt = Math.floor(words.length * (0.3 + Math.random() * 0.3));
       result.push(words.slice(0, splitAt).join(" ").replace(/[.!?]$/, "") + ".");
       result.push(words.slice(splitAt).join(" "));
       continue;
     }
 
-    // Merge short adjacent sentences (10%)
+    // Create micro-sentences (3-5 words) for extreme burstiness
+    if (words.length > 12 && Math.random() < 0.15) {
+      const microLength = 3 + Math.floor(Math.random() * 3);
+      result.push(words.slice(0, microLength).join(" ") + ".");
+      result.push(words.slice(microLength).join(" "));
+      continue;
+    }
+
+    // Merge short adjacent sentences (15% - increased from 10%)
     if (words.length < 7 && i < sentences.length - 1) {
       const next = sentences[i + 1]?.trim() || "";
-      if (next.split(/\s+/).length < 7 && Math.random() < 0.1) {
-        sent = sent.replace(/[.!?]$/, "") + ", and " + next.charAt(0).toLowerCase() + next.slice(1);
+      if (next.split(/\s+/).length < 7 && Math.random() < 0.15) {
+        const connectors = [", and ", " — ", "; ", ", but "];
+        const connector = connectors[Math.floor(Math.random() * connectors.length)];
+        sent = sent.replace(/[.!?]$/, "") + connector + next.charAt(0).toLowerCase() + next.slice(1);
         i++;
       }
     }
 
-    // Insert fragment openers (8%)
-    if (Math.random() < 0.08 && words.length > 6) {
-      const openers = ["Look. ", "Here's the thing. ", "Real talk. ", "Honestly? ", "No joke. "];
+    // Insert fragment openers (12% - increased from 8%)
+    if (Math.random() < 0.12 && words.length > 6) {
+      const openers = [
+        "Look. ", "Here's the thing. ", "Real talk. ", "Honestly? ", "No joke. ",
+        "Listen. ", "Get this. ", "Check it out. ", "Thing is. ", "See, "
+      ];
       sent = openers[Math.floor(Math.random() * openers.length)] + sent;
+    }
+
+    // Add parenthetical asides (10% chance) - increases syntactic complexity
+    if (Math.random() < 0.1 && words.length > 10) {
+      const asides = [
+        "at least in my experience",
+        "or so I've found",
+        "from what I can tell",
+        "if that makes sense",
+        "which is interesting",
+        "surprisingly enough",
+      ];
+      const aside = asides[Math.floor(Math.random() * asides.length)];
+      const insertPos = Math.floor(words.length * 0.5);
+      words.splice(insertPos, 0, `(${aside})`);
+      sent = words.join(" ");
+    }
+
+    // Inject questions for variety (8% chance)
+    if (Math.random() < 0.08 && words.length > 8 && !sent.includes("?")) {
+      const questions = ["Right?", "You know?", "Make sense?", "See what I mean?"];
+      sent = sent.replace(/\.$/, "") + ", " + questions[Math.floor(Math.random() * questions.length)].toLowerCase();
     }
 
     result.push(sent);
@@ -305,9 +484,21 @@ export async function rewriteText(options: RewriteOptions): Promise<RewriteResul
     layersApplied.push("recursive-paraphrase");
   }
 
-  // Layer 3: Token perturbation
-  text = perturbTokens(text);
+  // Layer 3: Advanced token perturbation with homoglyphs
+  text = perturbTokens(text, options.intensity === "aggressive");
   layersApplied.push("token-perturbation");
+
+  // Layer 3.5: Embedding space perturbation
+  if (options.intensity !== "light") {
+    text = injectEmbeddingNoise(text, options.domain);
+    layersApplied.push("embedding-perturbation");
+  }
+
+  // Layer 3.7: Lexical diversity injection
+  if (options.intensity === "aggressive") {
+    text = injectLexicalDiversity(text);
+    layersApplied.push("lexical-diversity");
+  }
 
   // Layer 4: Structural evasion
   if (options.intensity === "aggressive") {
