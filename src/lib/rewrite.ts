@@ -50,10 +50,13 @@ CRITICAL ANTI-DETECTION RULES:
 - Keep the same meaning. Output length MUST be ${0.7}x to ${1.0}x the input length. Shorter is better.
 - Use contractions everywhere (don't, can't, it's, you're, I've, we'll)
 - NEVER use these words (dead AI tells): furthermore, moreover, additionally, delve, tapestry, landscape, navigate, leverage, streamline, empower, pivotal, crucial, vital, holistic, multifaceted, paradigm, foster, harness, comprehensive, robust, seamless, cutting-edge, state-of-the-art, in today's, it is important to, plays a role, game-changer, meticulous, intricacies, underpinning, hence, thus, consequently, while that's happening, here's the thing, truth be told, all things considered, at the end of the day, when it comes to
+- NEVER start sentences with: Although, While, Despite, Whereas, Moreover, Furthermore, Additionally, Consequently
+- NEVER use "what if" or speculative hypotheticals — detectors flag them
+- NEVER write perfectly grammatically correct sentences — add comma splices, fragments, run-ons
 - Vary sentence length WILDLY. Mix 3-word punches with 25+ word ramblers. Never have two similar-length sentences in a row.
 - Vary sentence STRUCTURE. Don't use Subject-Verb-Object every time. Start with clauses, prepositions, questions, fragments.
 - Write SHORT paragraphs (1-3 sentences). Vary paragraph lengths too.
-- Include GENUINE grammatical imperfections humans make: comma splices, dropped articles, starting with And/But
+- Include GENUINE grammatical imperfections: comma splices, dropped articles, starting with And/But
 - Add specific real-world details, names, numbers, places
 - Mix registers — formal words next to casual ones in the same paragraph
 - Include one tangent or aside per paragraph
@@ -62,7 +65,8 @@ CRITICAL ANTI-DETECTION RULES:
 - Some paragraphs should be ONE sentence. Others should be rambling.
 - Include questions that feel natural, not rhetorical
 - Write like you're thinking out loud, not composing
-- Do NOT inject filler words mechanically. They must flow naturally or not at all.`;
+- Do NOT inject filler words mechanically. They must flow naturally or not at all.
+- Break grammar rules. Use fragments. Comma splices. Run-ons. Missing subjects. Like a real person texting.`;
 
 // ============================================
 // LAYER 1: Persona-based LLM Rewrite
@@ -454,10 +458,6 @@ function postProcess(text: string): string {
     /\ball things considered[,.]?\s/gi,
     /\bat the end of the day[,.]?\s/gi,
     /\bwhen it comes to\s/gi,
-    /\bthe fact of the matter is\s/gi,
-    /\bneedless to say[,.]?\s/gi,
-    /\bit goes without saying\s/gi,
-    /\bas a matter of fact[,.]?\s/gi,
   ];
 
   for (const pattern of kill) {
