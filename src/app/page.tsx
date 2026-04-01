@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 
 type Domain = "academic" | "blog" | "technical" | "creative";
-type Intensity = "light" | "medium" | "aggressive";
+type FileFormat = "txt" | "pdf" | "docx" | null;
 
 interface RewriteResponse {
   original: string;
@@ -25,8 +25,6 @@ interface DetectionResponse {
     burstiness: number;
     vocabularyRichness: number;
     structuralVariety: number;
-    semanticCoherence: number;
-    syntacticComplexity: number;
   };
   patternAnalysis: {
     score: number;
@@ -40,23 +38,59 @@ interface DetectionResponse {
       aiPatternCount: number;
     };
   };
-  modelFingerprint?: {
-    model: string;
-    confidence: number;
-  };
 }
 
 export default function Home() {
   const [input, setInput] = useState("");
   const [output, setOutput] = useState("");
   const [domain, setDomain] = useState<Domain>("blog");
-  const [intensity, setIntensity] = useState<Intensity>("aggressive");
-  const [multiPass, setMultiPass] = useState(true);
   const [loading, setLoading] = useState(false);
   const [detecting, setDetecting] = useState(false);
   const [detection, setDetection] = useState<DetectionResponse | null>(null);
   const [result, setResult] = useState<RewriteResponse | null>(null);
   const [error, setError] = useState("");
+  const [fileName, setFileName] = useState("");
+  const [fileFormat, setFileFormat] = useState<FileFormat>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    if (!["txt", "pdf", "docx"].includes(ext || "")) {
+      setError("Unsupported file. Use .txt, .pdf, or .docx");
+      return;
+    }
+
+    setUploading(true);
+    setError("");
+    setFileName(file.name);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      setInput(data.text);
+      setFileFormat(data.format as FileFormat);
+      setOutput("");
+      setResult(null);
+      setDetection(null);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Upload failed");
+      setFileName("");
+    } finally {
+      setUploading(false);
+    }
+  }, []);
 
   const handleDetect = useCallback(async () => {
     if (!input.trim()) return;
@@ -70,8 +104,7 @@ export default function Home() {
         body: JSON.stringify({ text: input }),
       });
       if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      setDetection(data);
+      setDetection(await res.json());
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Detection failed");
     } finally {
@@ -92,8 +125,8 @@ export default function Home() {
         body: JSON.stringify({
           text: input,
           domain,
-          intensity,
-          passes: multiPass ? 3 : 1,
+          intensity: "aggressive",
+          passes: 1,
         }),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -101,293 +134,233 @@ export default function Home() {
       setResult(data);
       setOutput(data.rewritten);
 
-      // Auto-detect the rewritten text
+      // Auto-detect rewritten text
       const detectRes = await fetch("/api/detect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: data.rewritten }),
       });
-      if (detectRes.ok) {
-        const detectData = await detectRes.json();
-        setDetection(detectData);
-      }
+      if (detectRes.ok) setDetection(await detectRes.json());
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Rewrite failed");
     } finally {
       setLoading(false);
     }
-  }, [input, domain, intensity, multiPass]);
+  }, [input, domain]);
+
+  const handleDownload = useCallback(() => {
+    if (!output) return;
+
+    const baseName = fileName ? fileName.replace(/\.[^.]+$/, "") : "humanized";
+    let blob: Blob;
+    let downloadName: string;
+
+    if (fileFormat === "docx") {
+      // For docx, download as txt (preserving content)
+      blob = new Blob([output], { type: "text/plain" });
+      downloadName = `${baseName}_humanized.txt`;
+    } else if (fileFormat === "pdf") {
+      // For pdf, download as txt
+      blob = new Blob([output], { type: "text/plain" });
+      downloadName = `${baseName}_humanized.txt`;
+    } else {
+      blob = new Blob([output], { type: "text/plain" });
+      downloadName = `${baseName}_humanized.txt`;
+    }
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = downloadName;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [output, fileName, fileFormat]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(output);
   };
 
-  const scoreColor = (score: number) => {
-    if (score >= 8) return "text-green-400";
-    if (score >= 6) return "text-yellow-400";
-    if (score >= 4) return "text-orange-400";
-    return "text-red-400";
-  };
-
-  const tierLabel = (tier: string) => {
-    const labels: Record<string, string> = {
-      "obvious-ai": "Obviously AI",
-      "ai-heavy": "AI-Heavy",
-      mixed: "Mixed",
-      "human-like": "Human-Like",
-      indistinguishable: "Indistinguishable",
-    };
-    return labels[tier] || tier;
-  };
-
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
+    <div className="min-h-screen bg-white text-zinc-900 font-[family-name:var(--font-inter)]">
       {/* Header */}
-      <header className="border-b border-zinc-800 bg-zinc-950/80 backdrop-blur sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight">
-              humanize<span className="text-emerald-400">.ai</span>
-            </h1>
-            <p className="text-xs text-zinc-500 mt-0.5">Free. No account. No tracking.</p>
-          </div>
-          <div className="flex items-center gap-3 text-xs text-zinc-500">
-            <span className="hidden sm:inline">Powered by Llama 3.3 70B</span>
-            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          </div>
+      <header className="border-b border-zinc-100 bg-white/80 backdrop-blur-sm sticky top-0 z-50">
+        <div className="max-w-3xl mx-auto px-4 py-4 flex items-center justify-between">
+          <h1 className="text-lg font-semibold tracking-tight text-zinc-900">
+            humanize<span className="text-emerald-600">.ai</span>
+          </h1>
+          <span className="text-xs text-zinc-400">Free &bull; No account</span>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-8">
-        {/* Controls */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-          {/* Domain */}
-          <div>
-            <label className="text-xs text-zinc-500 mb-1 block">Domain</label>
-            <div className="flex gap-1">
-              {(["blog", "academic", "technical", "creative"] as Domain[]).map((d) => (
-                <button
-                  key={d}
-                  onClick={() => setDomain(d)}
-                  className={`px-3 py-1.5 text-xs rounded-md transition ${
-                    domain === d
-                      ? "bg-emerald-600 text-white"
-                      : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
-                  }`}
-                >
-                  {d.charAt(0).toUpperCase() + d.slice(1)}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Intensity */}
-          <div>
-            <label className="text-xs text-zinc-500 mb-1 block">Intensity</label>
-            <div className="flex gap-1">
-              {(["light", "medium", "aggressive"] as Intensity[]).map((i) => (
-                <button
-                  key={i}
-                  onClick={() => setIntensity(i)}
-                  className={`px-3 py-1.5 text-xs rounded-md transition ${
-                    intensity === i
-                      ? "bg-emerald-600 text-white"
-                      : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
-                  }`}
-                >
-                  {i.charAt(0).toUpperCase() + i.slice(1)}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Multi-pass */}
-          <div>
-            <label className="text-xs text-zinc-500 mb-1 block">Passes</label>
-            <button
-              onClick={() => setMultiPass(!multiPass)}
-              className={`px-3 py-1.5 text-xs rounded-md transition ${
-                multiPass
-                  ? "bg-amber-600 text-white"
-                  : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
-              }`}
-            >
-              {multiPass ? "Multi-Pass (3x)" : "Single Pass"}
-            </button>
-          </div>
+      <main className="max-w-3xl mx-auto px-4 py-8">
+        {/* File Upload */}
+        <div className="mb-6">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".txt,.pdf,.docx"
+            onChange={handleFileUpload}
+            className="hidden"
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="w-full border-2 border-dashed border-zinc-200 rounded-xl p-6 text-center hover:border-emerald-300 hover:bg-emerald-50/30 transition cursor-pointer"
+          >
+            {uploading ? (
+              <span className="text-sm text-zinc-500">Reading file...</span>
+            ) : fileName ? (
+              <div>
+                <span className="text-sm text-zinc-600">{fileName}</span>
+                <span className="text-xs text-zinc-400 ml-2">({fileFormat?.toUpperCase()})</span>
+              </div>
+            ) : (
+              <div>
+                <p className="text-sm text-zinc-500">Drop a file or click to upload</p>
+                <p className="text-xs text-zinc-400 mt-1">.txt, .pdf, .docx</p>
+              </div>
+            )}
+          </button>
         </div>
 
-        {/* Editor Area */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-          {/* Input */}
-          <div className="relative">
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium text-zinc-300">AI Text (Input)</label>
-              <span className="text-xs text-zinc-500">{input.length} chars</span>
-            </div>
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Paste your AI-generated text here..."
-              className="w-full h-80 bg-zinc-900 border border-zinc-800 rounded-lg p-4 text-sm text-zinc-100 placeholder-zinc-600 resize-none focus:outline-none focus:border-emerald-600/50 focus:ring-1 focus:ring-emerald-600/20 transition font-mono"
-            />
+        {/* Input */}
+        <div className="mb-4">
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-sm font-medium text-zinc-700">Input</label>
+            <span className="text-xs text-zinc-400">{input.length} chars</span>
           </div>
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Paste your text or upload a file..."
+            className="w-full h-64 bg-zinc-50 border border-zinc-200 rounded-xl p-4 text-sm text-zinc-800 placeholder-zinc-400 resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition"
+          />
+        </div>
 
-          {/* Output */}
-          <div className="relative">
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium text-zinc-300">Humanized Text (Output)</label>
-              {output && (
-                <button
-                  onClick={handleCopy}
-                  className="text-xs text-emerald-400 hover:text-emerald-300 transition"
-                >
-                  Copy
-                </button>
-              )}
-            </div>
-            <textarea
-              value={output}
-              readOnly
-              placeholder="Humanized text will appear here..."
-              className="w-full h-80 bg-zinc-900 border border-zinc-800 rounded-lg p-4 text-sm text-zinc-100 placeholder-zinc-600 resize-none focus:outline-none transition font-mono"
-            />
-          </div>
+        {/* Domain Selector */}
+        <div className="flex gap-2 mb-4">
+          {(["blog", "academic", "technical", "creative"] as Domain[]).map((d) => (
+            <button
+              key={d}
+              onClick={() => setDomain(d)}
+              className={`px-4 py-2 text-sm rounded-lg transition font-medium ${
+                domain === d
+                  ? "bg-emerald-600 text-white shadow-sm"
+                  : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+              }`}
+            >
+              {d.charAt(0).toUpperCase() + d.slice(1)}
+            </button>
+          ))}
         </div>
 
         {/* Actions */}
-        <div className="flex flex-wrap gap-3 mb-8">
+        <div className="flex gap-3 mb-6">
           <button
             onClick={handleDetect}
             disabled={detecting || !input.trim()}
-            className="px-5 py-2.5 bg-zinc-800 hover:bg-zinc-700 disabled:bg-zinc-900 disabled:text-zinc-600 text-sm rounded-lg transition flex items-center gap-2"
+            className="flex-1 px-5 py-3 bg-zinc-100 hover:bg-zinc-200 disabled:bg-zinc-50 disabled:text-zinc-300 text-sm font-medium rounded-xl transition"
           >
-            {detecting ? (
-              <>
-                <div className="w-4 h-4 border-2 border-zinc-500 border-t-transparent rounded-full animate-spin" />
-                Scanning...
-              </>
-            ) : (
-              "Scan for AI"
-            )}
+            {detecting ? "Scanning..." : "Scan for AI"}
           </button>
           <button
             onClick={handleRewrite}
             disabled={loading || !input.trim()}
-            className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-900 disabled:text-emerald-700 text-sm font-medium rounded-lg transition flex items-center gap-2"
+            className="flex-1 px-5 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-300 text-white text-sm font-medium rounded-xl transition shadow-sm"
           >
-            {loading ? (
-              <>
-                <div className="w-4 h-4 border-2 border-emerald-300 border-t-transparent rounded-full animate-spin" />
-                Humanizing...
-              </>
-            ) : (
-              "Humanize"
-            )}
+            {loading ? "Humanizing..." : "Humanize"}
           </button>
         </div>
 
         {/* Error */}
         {error && (
-          <div className="mb-6 p-4 bg-red-950/50 border border-red-900 rounded-lg text-sm text-red-300">
+          <div className="mb-6 p-4 bg-red-50 border border-red-100 rounded-xl text-sm text-red-600">
             {error}
+          </div>
+        )}
+
+        {/* Output */}
+        {output && (
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-medium text-zinc-700">Output</label>
+              <div className="flex gap-3">
+                <button onClick={handleCopy} className="text-xs text-emerald-600 hover:text-emerald-500 font-medium">
+                  Copy
+                </button>
+                <button onClick={handleDownload} className="text-xs text-emerald-600 hover:text-emerald-500 font-medium">
+                  Download
+                </button>
+              </div>
+            </div>
+            <div className="w-full min-h-64 bg-zinc-50 border border-zinc-200 rounded-xl p-4 text-sm text-zinc-800 whitespace-pre-wrap">
+              {output}
+            </div>
           </div>
         )}
 
         {/* Detection Results */}
         {detection && (
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-6 mb-6">
-            <h2 className="text-sm font-semibold text-zinc-300 mb-4">Detection Analysis</h2>
+          <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-6 mb-6">
+            <h2 className="text-sm font-semibold text-zinc-700 mb-4">Detection Analysis</h2>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-              <div className="text-center">
-                <div className={`text-3xl font-bold ${detection.aiScore >= 70 ? "text-red-400" : detection.aiScore >= 40 ? "text-yellow-400" : "text-green-400"}`}>
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              <div className="bg-white rounded-lg p-4 border border-zinc-100">
+                <div className={`text-3xl font-bold ${detection.aiScore >= 70 ? "text-red-500" : detection.aiScore >= 40 ? "text-amber-500" : "text-emerald-500"}`}>
                   {detection.aiScore}%
                 </div>
-                <div className="text-xs text-zinc-500 mt-1">AI Probability</div>
+                <div className="text-xs text-zinc-400 mt-1">AI Probability</div>
               </div>
-              <div className="text-center">
-                <div className={`text-3xl font-bold ${detection.isAiGenerated ? "text-red-400" : "text-green-400"}`}>
+              <div className="bg-white rounded-lg p-4 border border-zinc-100">
+                <div className={`text-3xl font-bold ${detection.isAiGenerated ? "text-red-500" : "text-emerald-500"}`}>
                   {detection.isAiGenerated ? "AI" : "Human"}
                 </div>
-                <div className="text-xs text-zinc-500 mt-1">
+                <div className="text-xs text-zinc-400 mt-1">
                   {Math.round(detection.confidence * 100)}% confidence
-                </div>
-              </div>
-              <div className="text-center">
-                <div className={`text-3xl font-bold ${scoreColor(detection.humanScore)}`}>
-                  {detection.humanScore}
-                </div>
-                <div className="text-xs text-zinc-500 mt-1">Human Score /10</div>
-              </div>
-              <div className="text-center">
-                <div className="text-lg font-semibold text-zinc-300">
-                  {tierLabel(detection.patternAnalysis.tier)}
-                </div>
-                <div className="text-xs text-zinc-500 mt-1">
-                  {detection.patternAnalysis.stats.aiPatternCount} patterns found
                 </div>
               </div>
             </div>
 
-            {/* Model Fingerprint */}
-            {detection.modelFingerprint && (
-              <div className="mb-6 p-3 bg-purple-950/30 border border-purple-800/50 rounded-lg">
-                <div className="flex items-center justify-between">
-                  <div className="text-sm text-purple-300">
-                    Detected Model: <span className="font-semibold uppercase">{detection.modelFingerprint.model}</span>
-                  </div>
-                  <div className="text-xs text-purple-400">
-                    {Math.round(detection.modelFingerprint.confidence * 100)}% confidence
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Detailed Scores */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {/* Metrics */}
+            <div className="grid grid-cols-2 gap-3">
               {[
                 { label: "Perplexity", value: detection.detectorScores.perplexity },
                 { label: "Burstiness", value: detection.detectorScores.burstiness },
                 { label: "Vocabulary", value: detection.detectorScores.vocabularyRichness },
                 { label: "Structure", value: detection.detectorScores.structuralVariety },
-                { label: "Coherence", value: detection.detectorScores.semanticCoherence },
-                { label: "Syntax", value: detection.detectorScores.syntacticComplexity },
               ].map((s) => (
-                <div key={s.label} className="bg-zinc-800/50 rounded-lg p-3">
-                  <div className="text-xs text-zinc-500 mb-1">{s.label}</div>
+                <div key={s.label} className="bg-white rounded-lg p-3 border border-zinc-100">
+                  <div className="text-xs text-zinc-400 mb-1">{s.label}</div>
                   <div className="flex items-center gap-2">
-                    <div className="flex-1 bg-zinc-700 rounded-full h-2">
+                    <div className="flex-1 bg-zinc-100 rounded-full h-1.5">
                       <div
-                        className={`h-2 rounded-full transition-all ${
-                          s.value >= 60 ? "bg-green-500" : s.value >= 40 ? "bg-yellow-500" : "bg-red-500"
+                        className={`h-1.5 rounded-full transition-all ${
+                          s.value >= 60 ? "bg-emerald-500" : s.value >= 40 ? "bg-amber-500" : "bg-red-500"
                         }`}
                         style={{ width: `${s.value}%` }}
                       />
                     </div>
-                    <span className="text-xs text-zinc-400 w-8 text-right">{s.value}</span>
+                    <span className="text-xs text-zinc-500 w-8 text-right">{s.value}</span>
                   </div>
                 </div>
               ))}
             </div>
 
-            {/* Pattern Matches */}
+            {/* Flagged Patterns */}
             {detection.patternAnalysis.matches.length > 0 && (
               <div className="mt-4">
-                <div className="text-xs text-zinc-500 mb-2">Flagged Patterns</div>
+                <div className="text-xs text-zinc-400 mb-2">Flagged Patterns</div>
                 <div className="flex flex-wrap gap-1.5">
-                  {detection.patternAnalysis.matches.slice(0, 20).map((m, i) => (
+                  {detection.patternAnalysis.matches.slice(0, 15).map((m, i) => (
                     <span
                       key={i}
-                      className={`text-xs px-2 py-0.5 rounded ${
-                        m.tier === 1
-                          ? "bg-red-900/50 text-red-300"
-                          : m.tier === 2
-                          ? "bg-orange-900/50 text-orange-300"
-                          : "bg-yellow-900/50 text-yellow-300"
+                      className={`text-xs px-2 py-0.5 rounded-md ${
+                        m.tier === 1 ? "bg-red-50 text-red-500 border border-red-100" :
+                        m.tier === 2 ? "bg-amber-50 text-amber-600 border border-amber-100" :
+                        "bg-zinc-100 text-zinc-500 border border-zinc-200"
                       }`}
                     >
-                      &quot;{m.match}&quot;
+                      {m.match}
                     </span>
                   ))}
                 </div>
@@ -396,22 +369,19 @@ export default function Home() {
           </div>
         )}
 
-        {/* Result Info */}
+        {/* Result Meta */}
         {result && (
-          <div className="flex flex-wrap gap-4 text-xs text-zinc-500">
-            <span>Passes: {result.passes}</span>
-            <span>Model: {result.model}</span>
-            <span>Input: {result.originalLength} chars</span>
-            <span>Output: {result.rewrittenLength} chars</span>
+          <div className="flex flex-wrap gap-4 text-xs text-zinc-400 mb-8">
+            <span>{result.passes} pass{result.passes > 1 ? "es" : ""}</span>
+            <span>{result.originalLength} &rarr; {result.rewrittenLength} chars</span>
           </div>
         )}
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-zinc-800 mt-16">
-        <div className="max-w-7xl mx-auto px-4 py-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-zinc-600">
-          <span>No data stored. No tracking. No accounts. 100% free.</span>
-          <span>Built with Llama 3.3 70B via NVIDIA NIM</span>
+      <footer className="border-t border-zinc-100">
+        <div className="max-w-3xl mx-auto px-4 py-6 text-center text-xs text-zinc-400">
+          No data stored. No tracking. No accounts. Powered by Llama 3.3 70B.
         </div>
       </footer>
     </div>

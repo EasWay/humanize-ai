@@ -2,13 +2,12 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({ subsets: ["latin"] });
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
   title: "humanize.ai — Free AI Text Humanizer",
   description:
-    "Free, open AI text humanizer. Paste AI-generated text, get human-sounding output. No accounts, no tracking, no limits. Powered by Llama 3.3 70B.",
-  keywords: ["ai humanizer", "ai detector bypass", "humanize ai text", "free ai humanizer"],
+    "Free AI text humanizer. Upload documents or paste text. Passes GPTZero, Originality.ai, Turnitin. No accounts, no tracking.",
 };
 
 export default function RootLayout({
@@ -17,8 +16,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
-      <body className={inter.className}>{children}</body>
+    <html lang="en">
+      <body className={`${inter.variable} antialiased`}>{children}</body>
     </html>
   );
 }
