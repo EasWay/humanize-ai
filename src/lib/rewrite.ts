@@ -3,6 +3,7 @@
 // Only rewrites prose in simple academic English
 
 const NVIDIA_API_BASE = "https://integrate.api.nvidia.com/v1";
+const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
 export interface RewriteOptions {
   text: string;
@@ -138,36 +139,81 @@ async function fetchWithRetry(url: string, options: RequestInit, maxRetries: num
 async function llmRewrite(text: string, apiKey: string): Promise<string> {
   const charCount = text.length;
 
-  const response = await fetchWithRetry(`${NVIDIA_API_BASE}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: "meta/llama-3.3-70b-instruct",
-      messages: [
-        { role: "system", content: ACADEMIC_SYSTEM },
-        {
-          role: "user",
-          content: `Rewrite this academic text (${charCount} chars). Keep placeholder tags intact. Keep same length.\n\n${text}`,
-        },
-      ],
-      temperature: 0.88,
-      max_tokens: Math.min(2048, Math.ceil(charCount * 1.2)),
-      top_p: 0.85,
-      frequency_penalty: 0.7,
-      presence_penalty: 0.5,
-    }),
-  });
+  // Try NVIDIA first
+  try {
+    const response = await fetchWithRetry(`${NVIDIA_API_BASE}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "meta/llama-3.3-70b-instruct",
+        messages: [
+          { role: "system", content: ACADEMIC_SYSTEM },
+          {
+            role: "user",
+            content: `Rewrite this academic text (${charCount} chars). Keep placeholder tags intact. Keep same length.\n\n${text}`,
+          },
+        ],
+        temperature: 0.88,
+        max_tokens: Math.min(2048, Math.ceil(charCount * 1.2)),
+        top_p: 0.85,
+        frequency_penalty: 0.7,
+        presence_penalty: 0.5,
+      }),
+    });
 
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`NVIDIA API error: ${response.status} — ${err}`);
+    if (response.ok) {
+      const data = await response.json();
+      return data.choices[0]?.message?.content?.trim() || text;
+    }
+
+    // If rate limited, fall through to Gemini
+    if (response.status !== 429) {
+      const err = await response.text();
+      throw new Error(`NVIDIA API error: ${response.status} — ${err}`);
+    }
+  } catch (e) {
+    // If it's not a rate limit error, rethrow
+    if (!(e instanceof Error && e.message.includes("429"))) {
+      throw e;
+    }
   }
 
-  const data = await response.json();
-  return data.choices[0]?.message?.content?.trim() || text;
+  // Fallback: Gemini
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (!geminiKey) throw new Error("NVIDIA rate limited and no GEMINI_API_KEY configured");
+
+  const geminiResponse = await fetch(
+    `${GEMINI_API_BASE}/gemini-2.0-flash:generateContent?key=${geminiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{
+          role: "user",
+          parts: [{ text: `${ACADEMIC_SYSTEM}\n\nRewrite this academic text. Keep placeholder tags intact. Keep same length.\n\n${text}` }],
+        }],
+        generationConfig: {
+          temperature: 0.88,
+          topP: 0.85,
+          maxOutputTokens: Math.min(2048, Math.ceil(charCount * 1.2)),
+        },
+      }),
+    }
+  );
+
+  if (!geminiResponse.ok) {
+    const err = await geminiResponse.text();
+    throw new Error(`Gemini API error: ${geminiResponse.status} — ${err}`);
+  }
+
+  const geminiData = await geminiResponse.json() as {
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+  };
+
+  return geminiData.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || text;
 }
 
 // ============================================
