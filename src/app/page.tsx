@@ -4,13 +4,13 @@ import { useState, useCallback } from "react";
 
 type Domain = "academic" | "blog" | "technical" | "creative";
 type Intensity = "light" | "medium" | "aggressive";
-type Detector = "general" | "gptzero" | "originality" | "turnitin";
 
 interface RewriteResponse {
   original: string;
   rewritten: string;
   passes: number;
   model: string;
+  layersApplied: string[];
   originalLength: number;
   rewrittenLength: number;
 }
@@ -44,9 +44,8 @@ export default function Home() {
   const [input, setInput] = useState("");
   const [output, setOutput] = useState("");
   const [domain, setDomain] = useState<Domain>("blog");
-  const [intensity, setIntensity] = useState<Intensity>("medium");
-  const [detector, setDetector] = useState<Detector>("general");
-  const [multiPass, setMultiPass] = useState(false);
+  const [intensity, setIntensity] = useState<Intensity>("aggressive");
+  const [multiPass, setMultiPass] = useState(true);
   const [loading, setLoading] = useState(false);
   const [detecting, setDetecting] = useState(false);
   const [detection, setDetection] = useState<DetectionResponse | null>(null);
@@ -88,7 +87,6 @@ export default function Home() {
           text: input,
           domain,
           intensity,
-          targetDetector: detector,
           passes: multiPass ? 3 : 1,
         }),
       });
@@ -112,7 +110,7 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  }, [input, domain, intensity, detector, multiPass]);
+  }, [input, domain, intensity, multiPass]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(output);
@@ -197,29 +195,9 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Detector Target */}
-          <div>
-            <label className="text-xs text-zinc-500 mb-1 block">Target Detector</label>
-            <div className="flex gap-1 flex-wrap">
-              {(["general", "gptzero", "originality", "turnitin"] as Detector[]).map((d) => (
-                <button
-                  key={d}
-                  onClick={() => setDetector(d)}
-                  className={`px-3 py-1.5 text-xs rounded-md transition ${
-                    detector === d
-                      ? "bg-emerald-600 text-white"
-                      : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
-                  }`}
-                >
-                  {d === "general" ? "All" : d === "gptzero" ? "GPTZero" : d === "originality" ? "Originality" : "Turnitin"}
-                </button>
-              ))}
-            </div>
-          </div>
-
           {/* Multi-pass */}
           <div>
-            <label className="text-xs text-zinc-500 mb-1 block">Mode</label>
+            <label className="text-xs text-zinc-500 mb-1 block">Passes</label>
             <button
               onClick={() => setMultiPass(!multiPass)}
               className={`px-3 py-1.5 text-xs rounded-md transition ${
