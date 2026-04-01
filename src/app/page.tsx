@@ -42,7 +42,7 @@ export default function Home() {
   const [input, setInput] = useState("");
   const [output, setOutput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [progress, setProgress] = useState({ current: 0, total: 0 });
+  const [steps, setSteps] = useState<Array<{ label: string; status: "pending" | "active" | "done"; chunks?: number; current?: number }>>([]);
   const [detecting, setDetecting] = useState(false);
   const [detection, setDetection] = useState<DetectionResponse | null>(null);
   const [result, setResult] = useState<RewriteResponse | null>(null);
@@ -110,10 +110,25 @@ export default function Home() {
     setOutput("");
     setResult(null);
     setError("");
-    setProgress({ current: 0, total: 0 });
+    setSteps([
+      { label: "Analyzing document", status: "pending" },
+      { label: "Protecting citations & references", status: "pending" },
+      { label: "Humanizing text", status: "pending" },
+      { label: "Running detection check", status: "pending" },
+    ]);
 
     try {
-      // Split text into chunks at paragraph boundaries
+      // Step 1: Analyze
+      setSteps(prev => prev.map((s, i) => i === 0 ? { ...s, status: "active" } : s));
+      await new Promise(r => setTimeout(r, 500));
+      setSteps(prev => prev.map((s, i) => i === 0 ? { ...s, status: "done" } : s));
+
+      // Step 2: Protect citations
+      setSteps(prev => prev.map((s, i) => i === 1 ? { ...s, status: "active" } : s));
+      await new Promise(r => setTimeout(r, 300));
+      setSteps(prev => prev.map((s, i) => i === 1 ? { ...s, status: "done" } : s));
+
+      // Step 3: Chunk and humanize
       const CHUNK_SIZE = 1800;
       const paragraphs = input.split(/(\n\s*\n)/);
       const chunks: string[] = [];
@@ -129,7 +144,6 @@ export default function Home() {
       }
       if (current.trim()) chunks.push(current.trim());
 
-      // Fallback for oversized paragraphs
       const finalChunks: string[] = [];
       for (const chunk of chunks) {
         if (chunk.length <= CHUNK_SIZE) {
@@ -149,12 +163,11 @@ export default function Home() {
         }
       }
 
-      setProgress({ current: 0, total: finalChunks.length });
+      setSteps(prev => prev.map((s, i) => i === 2 ? { ...s, status: "active", chunks: finalChunks.length, current: 0 } : s));
 
-      // Process each chunk sequentially (to avoid rate limits)
       const rewrittenChunks: string[] = [];
       for (let i = 0; i < finalChunks.length; i++) {
-        setProgress({ current: i + 1, total: finalChunks.length });
+        setSteps(prev => prev.map((s, idx) => idx === 2 ? { ...s, current: i + 1 } : s));
 
         const res = await fetch("/api/rewrite", {
           method: "POST",
@@ -170,11 +183,12 @@ export default function Home() {
         const data = await res.json();
         rewrittenChunks.push(data.rewritten);
 
-        // Small delay between chunks to avoid rate limits
         if (i < finalChunks.length - 1) {
           await new Promise(r => setTimeout(r, 1000));
         }
       }
+
+      setSteps(prev => prev.map((s, i) => i === 2 ? { ...s, status: "done" } : s));
 
       const fullOutput = rewrittenChunks.join("\n\n");
       setOutput(fullOutput);
@@ -189,18 +203,19 @@ export default function Home() {
         chunks: finalChunks.length,
       });
 
-      // Auto-detect rewritten text
+      // Step 4: Detection
+      setSteps(prev => prev.map((s, i) => i === 3 ? { ...s, status: "active" } : s));
       const detectRes = await fetch("/api/detect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: fullOutput }),
       });
       if (detectRes.ok) setDetection(await detectRes.json());
+      setSteps(prev => prev.map((s, i) => i === 3 ? { ...s, status: "done" } : s));
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Rewrite failed");
     } finally {
       setLoading(false);
-      setProgress({ current: 0, total: 0 });
     }
   }, [input]);
 
@@ -286,13 +301,72 @@ export default function Home() {
             disabled={loading || !input.trim()}
             className="flex-1 px-5 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-300 text-white text-sm font-medium rounded-xl transition shadow-sm"
           >
-            {loading
-              ? progress.total > 0
-                ? `Humanizing ${progress.current}/${progress.total}...`
-                : "Humanizing..."
-              : "Humanize"}
+            {loading ? "Humanizing..." : "Humanize"}
           </button>
         </div>
+
+        {/* Progress Steps */}
+        {loading && steps.length > 0 && (
+          <div className="mb-6 space-y-3">
+            {steps.map((step, i) => (
+              <div key={i} className="flex items-center gap-3">
+                {/* Step indicator */}
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-medium transition-all ${
+                  step.status === "done"
+                    ? "bg-emerald-500 text-white"
+                    : step.status === "active"
+                    ? "bg-emerald-100 text-emerald-600 ring-2 ring-emerald-500 ring-offset-2"
+                    : "bg-zinc-100 text-zinc-400"
+                }`}>
+                  {step.status === "done" ? (
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  ) : (
+                    i + 1
+                  )}
+                </div>
+
+                {/* Step content */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className={`text-sm ${
+                      step.status === "active" ? "text-zinc-900 font-medium" :
+                      step.status === "done" ? "text-zinc-500" :
+                      "text-zinc-400"
+                    }`}>
+                      {step.label}
+                    </span>
+                    {step.chunks && step.status === "active" && (
+                      <span className="text-xs text-zinc-400">{step.current}/{step.chunks}</span>
+                    )}
+                  </div>
+
+                  {/* Progress bar */}
+                  <div className="w-full bg-zinc-100 rounded-full h-1.5">
+                    <div
+                      className={`h-1.5 rounded-full transition-all duration-500 ${
+                        step.status === "done" ? "bg-emerald-500" :
+                        step.status === "active" ? "bg-emerald-400" :
+                        "bg-transparent"
+                      }`}
+                      style={{
+                        width: step.status === "done"
+                          ? "100%"
+                          : step.status === "active" && step.chunks
+                          ? `${((step.current || 0) / step.chunks) * 100}%`
+                          : step.status === "active"
+                          ? "60%"
+                          : "0%",
+                        animation: step.status === "active" && !step.chunks ? "pulse 2s infinite" : undefined
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Error */}
         {error && (
