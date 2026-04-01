@@ -102,14 +102,17 @@ async function llmRewrite(text: string, apiKey: string, persona?: string): Promi
 // Pass text through a second specialized paraphrase model
 // This disrupts stylistic watermarks from the first pass
 async function recursiveParaphrase(text: string, apiKey: string): Promise<string> {
-  const paraphrasePrompt = `You are a text paraphraser. Rewrite the following text to express the same meaning but with completely different words, sentence structures, and flow. 
+  const charCount = text.length;
+  const paraphrasePrompt = `You are a text paraphraser. Rewrite the text with completely different words and structures.
+
+CRITICAL: Output MUST be between ${Math.floor(charCount * 0.85)} and ${charCount} characters. Do NOT expand. Do NOT add anything.
 
 Rules:
-- Use different vocabulary (pick less common synonyms)
-- Restructure sentences (change from active to passive or vice versa)
+- Different vocabulary (less common synonyms)
+- Restructure sentences (active↔passive)
 - Reorder ideas within paragraphs
-- Add or remove transitional phrases
-- Keep the same length
+- Keep the same meaning
+- Keep the same length or SHORTER
 - Output ONLY the rewritten text`;
 
   const response = await fetch(`${NVIDIA_API_BASE}/chat/completions`, {
