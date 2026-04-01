@@ -80,20 +80,21 @@ function splitText(text: string): Segment[] {
 // LLM REWRITE
 // ============================================
 
-const ACADEMIC_SYSTEM = `You are a simple academic English rewriter.
+const ACADEMIC_SYSTEM = `You are a simple academic English rewriter. You ONLY rewrite existing text.
 
-RULES — FOLLOW ALL:
+ABSOLUTE RULES:
 1. Output ONLY the rewritten text. Nothing else.
-2. Keep the SAME MEANING exactly. Do not add facts, examples, or sentences.
-3. Keep the SAME LENGTH or slightly shorter. Never expand.
-4. Use simple, clear English. Short sentences. Active voice.
-5. Use contractions where natural (don't, can't, it's).
-6. Vary sentence lengths (mix short and long).
-7. Never use: furthermore, moreover, additionally, delve, tapestry, landscape, navigate, leverage, streamline, empower, pivotal, crucial, vital, holistic, multifaceted, paradigm, foster, harness, comprehensive, robust, seamless, cutting-edge, state-of-the-art, in today's, it is important to, plays a role, game-changer, hence, thus, consequently
-8. Never start with: Although, While, Despite, Whereas
-9. Do NOT add "Notably," "This study finds," "We found that" or any new transition phrases.
-10. Do NOT add any new sentences. Only rewrite existing ones.
-11. Keep paragraph breaks.`;
+2. Keep the EXACT SAME MEANING. Do not add, remove, or change any facts, ideas, or information.
+3. Keep the SAME NUMBER of sentences. If input has 5 sentences, output must have 5.
+4. Keep the SAME LENGTH. Never expand. Prefer slightly shorter.
+5. Use simple, clear English. Active voice. Contractions where natural.
+6. Vary sentence lengths.
+7. NEVER use: furthermore, moreover, additionally, delve, tapestry, landscape, navigate, leverage, streamline, empower, pivotal, crucial, vital, holistic, multifaceted, paradigm, foster, harness, comprehensive, robust, seamless, cutting-edge, state-of-the-art, in today's, it is important to, plays a role, game-changer, hence, thus, consequently, Notably, This study finds, We found that, This study shows, This study highlights, We observe that, We interpret
+8. NEVER start sentences with: Although, While, Despite, Whereas, Notably, Interestingly
+9. NEVER add transition phrases that weren't in the original.
+10. NEVER add "Discussion:" or section labels.
+11. NEVER add your own analysis, interpretation, or commentary.
+12. Keep paragraph breaks.`;
 
 async function callNVIDIA(text: string, apiKey: string): Promise<string> {
   const charCount = text.length;
