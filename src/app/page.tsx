@@ -13,6 +13,7 @@ interface RewriteResponse {
   layersApplied: string[];
   originalLength: number;
   rewrittenLength: number;
+  chunks?: number;
 }
 
 interface DetectionResponse {
@@ -52,6 +53,8 @@ export default function Home() {
   const [fileName, setFileName] = useState("");
   const [fileFormat, setFileFormat] = useState<FileFormat>(null);
   const [uploading, setUploading] = useState(false);
+  const [urlInput, setUrlInput] = useState("");
+  const [fetchingUrl, setFetchingUrl] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -91,6 +94,31 @@ export default function Home() {
       setUploading(false);
     }
   }, []);
+
+  const handleFetchUrl = useCallback(async () => {
+    if (!urlInput.trim()) return;
+    setFetchingUrl(true);
+    setError("");
+    try {
+      const res = await fetch("/api/fetch-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: urlInput.trim() }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      setInput(data.text);
+      setFileName(data.url);
+      setFileFormat("txt");
+      setOutput("");
+      setResult(null);
+      setDetection(null);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "URL fetch failed");
+    } finally {
+      setFetchingUrl(false);
+    }
+  }, [urlInput]);
 
   const handleDetect = useCallback(async () => {
     if (!input.trim()) return;
@@ -220,6 +248,25 @@ export default function Home() {
                 <p className="text-xs text-zinc-400 mt-1">.txt, .pdf, .docx</p>
               </div>
             )}
+          </button>
+        </div>
+
+        {/* URL Input */}
+        <div className="mb-4 flex gap-2">
+          <input
+            type="url"
+            value={urlInput}
+            onChange={(e) => setUrlInput(e.target.value)}
+            placeholder="Or paste a URL to extract text..."
+            className="flex-1 bg-zinc-50 border border-zinc-200 rounded-lg px-4 py-2.5 text-sm text-zinc-800 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400 transition"
+            onKeyDown={(e) => e.key === "Enter" && handleFetchUrl()}
+          />
+          <button
+            onClick={handleFetchUrl}
+            disabled={fetchingUrl || !urlInput.trim()}
+            className="px-4 py-2.5 bg-zinc-100 hover:bg-zinc-200 disabled:bg-zinc-50 disabled:text-zinc-300 text-sm font-medium rounded-lg transition"
+          >
+            {fetchingUrl ? "..." : "Fetch"}
           </button>
         </div>
 
@@ -374,6 +421,9 @@ export default function Home() {
           <div className="flex flex-wrap gap-4 text-xs text-zinc-400 mb-8">
             <span>{result.passes} pass{result.passes > 1 ? "es" : ""}</span>
             <span>{result.originalLength} &rarr; {result.rewrittenLength} chars</span>
+            {result.chunks && result.chunks > 1 && (
+              <span>{result.chunks} chunks processed</span>
+            )}
           </div>
         )}
       </main>
