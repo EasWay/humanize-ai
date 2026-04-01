@@ -19,6 +19,7 @@ interface DetectionResponse {
   isAiGenerated: boolean;
   confidence: number;
   humanScore: number;
+  aiScore: number;
   detectorScores: {
     perplexity: number;
     burstiness: number;
@@ -316,10 +317,10 @@ export default function Home() {
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
               <div className="text-center">
-                <div className={`text-3xl font-bold ${scoreColor(detection.humanScore)}`}>
-                  {detection.humanScore}
+                <div className={`text-3xl font-bold ${detection.aiScore >= 70 ? "text-red-400" : detection.aiScore >= 40 ? "text-yellow-400" : "text-green-400"}`}>
+                  {detection.aiScore}%
                 </div>
-                <div className="text-xs text-zinc-500 mt-1">Human Score /10</div>
+                <div className="text-xs text-zinc-500 mt-1">AI Probability</div>
               </div>
               <div className="text-center">
                 <div className={`text-3xl font-bold ${detection.isAiGenerated ? "text-red-400" : "text-green-400"}`}>
@@ -330,16 +331,18 @@ export default function Home() {
                 </div>
               </div>
               <div className="text-center">
-                <div className="text-lg font-semibold text-zinc-300">
-                  {tierLabel(detection.patternAnalysis.tier)}
+                <div className={`text-3xl font-bold ${scoreColor(detection.humanScore)}`}>
+                  {detection.humanScore}
                 </div>
-                <div className="text-xs text-zinc-500 mt-1">Classification</div>
+                <div className="text-xs text-zinc-500 mt-1">Human Score /10</div>
               </div>
               <div className="text-center">
                 <div className="text-lg font-semibold text-zinc-300">
-                  {detection.patternAnalysis.stats.aiPatternCount}
+                  {tierLabel(detection.patternAnalysis.tier)}
                 </div>
-                <div className="text-xs text-zinc-500 mt-1">AI Patterns Found</div>
+                <div className="text-xs text-zinc-500 mt-1">
+                  {detection.patternAnalysis.stats.aiPatternCount} patterns found
+                </div>
               </div>
             </div>
 
