@@ -100,7 +100,8 @@ YOUR WRITING STYLE:
 - Include one analytical comment per paragraph (your own interpretation)
 - Use passive voice in Methods sections only
 - Be specific: use numbers, percentages, exact findings
-- CRITICAL: Keep ALL placeholder tags (__PROTECTED_0__, etc.) EXACTLY as they appear
+- CRITICAL: Keep ALL placeholder tags (__PROTECTED_0__, etc.) EXACTLY as they appear — do not modify, move, or remove them
+- CRITICAL: Do not create NEW placeholder tags. Only use the ones already in the input text.
 - CRITICAL: Do not modify any citation placeholders, URLs, or reference markers
 - CRITICAL: Keep the same paragraph breaks as the input
 
