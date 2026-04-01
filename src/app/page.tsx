@@ -42,6 +42,7 @@ export default function Home() {
   const [input, setInput] = useState("");
   const [output, setOutput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [detecting, setDetecting] = useState(false);
   const [detection, setDetection] = useState<DetectionResponse | null>(null);
   const [result, setResult] = useState<RewriteResponse | null>(null);
@@ -109,28 +110,97 @@ export default function Home() {
     setOutput("");
     setResult(null);
     setError("");
+    setProgress({ current: 0, total: 0 });
+
     try {
-      const res = await fetch("/api/rewrite", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: input, passes: 1 }),
+      // Split text into chunks at paragraph boundaries
+      const CHUNK_SIZE = 1800;
+      const paragraphs = input.split(/(\n\s*\n)/);
+      const chunks: string[] = [];
+      let current = "";
+
+      for (const para of paragraphs) {
+        if ((current + para).length > CHUNK_SIZE && current.trim().length > 0) {
+          chunks.push(current.trim());
+          current = para;
+        } else {
+          current += para;
+        }
+      }
+      if (current.trim()) chunks.push(current.trim());
+
+      // Fallback for oversized paragraphs
+      const finalChunks: string[] = [];
+      for (const chunk of chunks) {
+        if (chunk.length <= CHUNK_SIZE) {
+          finalChunks.push(chunk);
+        } else {
+          const sentences = chunk.match(/[^.!?]+[.!?]+/g) || [chunk];
+          let sub = "";
+          for (const sent of sentences) {
+            if ((sub + " " + sent).length > CHUNK_SIZE && sub.length > 0) {
+              finalChunks.push(sub.trim());
+              sub = sent;
+            } else {
+              sub = sub ? sub + " " + sent : sent;
+            }
+          }
+          if (sub.trim()) finalChunks.push(sub.trim());
+        }
+      }
+
+      setProgress({ current: 0, total: finalChunks.length });
+
+      // Process each chunk sequentially (to avoid rate limits)
+      const rewrittenChunks: string[] = [];
+      for (let i = 0; i < finalChunks.length; i++) {
+        setProgress({ current: i + 1, total: finalChunks.length });
+
+        const res = await fetch("/api/rewrite", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: finalChunks[i] }),
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || `Chunk ${i + 1} failed`);
+        }
+
+        const data = await res.json();
+        rewrittenChunks.push(data.rewritten);
+
+        // Small delay between chunks to avoid rate limits
+        if (i < finalChunks.length - 1) {
+          await new Promise(r => setTimeout(r, 1000));
+        }
+      }
+
+      const fullOutput = rewrittenChunks.join("\n\n");
+      setOutput(fullOutput);
+      setResult({
+        original: input,
+        rewritten: fullOutput,
+        passes: 1,
+        model: "meta/llama-3.3-70b-instruct",
+        layersApplied: ["academic-rewrite", "citation-restore", "post-processing"],
+        originalLength: input.length,
+        rewrittenLength: fullOutput.length,
+        chunks: finalChunks.length,
       });
-      if (!res.ok) throw new Error(await res.text());
-      const data: RewriteResponse = await res.json();
-      setResult(data);
-      setOutput(data.rewritten);
 
       // Auto-detect rewritten text
       const detectRes = await fetch("/api/detect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: data.rewritten }),
+        body: JSON.stringify({ text: fullOutput }),
       });
       if (detectRes.ok) setDetection(await detectRes.json());
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Rewrite failed");
     } finally {
       setLoading(false);
+      setProgress({ current: 0, total: 0 });
     }
   }, [input]);
 
@@ -216,7 +286,11 @@ export default function Home() {
             disabled={loading || !input.trim()}
             className="flex-1 px-5 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-300 text-white text-sm font-medium rounded-xl transition shadow-sm"
           >
-            {loading ? "Humanizing..." : "Humanize"}
+            {loading
+              ? progress.total > 0
+                ? `Humanizing ${progress.current}/${progress.total}...`
+                : "Humanizing..."
+              : "Humanize"}
           </button>
         </div>
 
