@@ -47,33 +47,22 @@ Use this writing persona:
 
 const BASE_RULES = `
 CRITICAL ANTI-DETECTION RULES:
-- Keep the same meaning and roughly the same length
-- Use contractions HEAVILY (don't, can't, it's, you're, I've, we'll, they'd)
-- NEVER use: furthermore, moreover, additionally, delve, tapestry, landscape, navigate, leverage, streamline, empower, pivotal, crucial, vital, holistic, multifaceted, paradigm, foster, harness, comprehensive, robust, seamless, cutting-edge, state-of-the-art, in today's, it is important to, plays a role, game-changer, meticulous, intricacies, underpinning, hence, thus, consequently, while that's happening, here's the thing, truth be told, all things considered, at the end of the day, when it comes to, the fact of the matter is, needless to say, it goes without saying
-- Vary sentence length WILDLY (some 3 words, some 30+)
-- Add specific details, numbers, names, examples
-- The text MUST have HIGH PERPLEXITY (unpredictable word choices)
-- The text MUST have HIGH BURSTINESS (wild sentence length variation)
-- Write SHORT paragraphs (1-3 sentences max)
-- Break symmetrical patterns and parallel structures
-- Use fragments. Short ones. Like this.
-- Add parenthetical asides (they feel human)
-- Inject questions occasionally. Right?
-- Use em dashes for interruptions — like this — sparingly
-- Mix formal and informal register within the same text
-- Make tangential comments that slightly drift from the main topic
-- Use idiomatic expressions and colloquialisms
-- Avoid passive voice unless absolutely necessary
-- Never start consecutive sentences the same way
-- Include personal opinions or hedges ("I think", "maybe", "probably")
-- Use specific examples instead of abstract concepts
-- Break grammar rules intentionally for emphasis
-- Add filler words occasionally (honestly, basically, literally)
-- Create run-on sentences sometimes, connecting multiple thoughts with commas or semicolons, just like people do when they're thinking out loud
-- Then follow with. Fragments.
-- Add grammatical imperfections: drop articles occasionally, use comma splices, start with And/But
-- Use "gonna", "wanna", "gotta", "kinda" sparingly
-- Include one typo per paragraph max (humans make typos)`;
+- Keep the same meaning. Output length MUST be ${0.7}x to ${1.0}x the input length. Shorter is better.
+- Use contractions everywhere (don't, can't, it's, you're, I've, we'll)
+- NEVER use these words (dead AI tells): furthermore, moreover, additionally, delve, tapestry, landscape, navigate, leverage, streamline, empower, pivotal, crucial, vital, holistic, multifaceted, paradigm, foster, harness, comprehensive, robust, seamless, cutting-edge, state-of-the-art, in today's, it is important to, plays a role, game-changer, meticulous, intricacies, underpinning, hence, thus, consequently, while that's happening, here's the thing, truth be told, all things considered, at the end of the day, when it comes to
+- Vary sentence length WILDLY. Mix 3-word punches with 25+ word ramblers. Never have two similar-length sentences in a row.
+- Vary sentence STRUCTURE. Don't use Subject-Verb-Object every time. Start with clauses, prepositions, questions, fragments.
+- Write SHORT paragraphs (1-3 sentences). Vary paragraph lengths too.
+- Include GENUINE grammatical imperfections humans make: comma splices, dropped articles, starting with And/But
+- Add specific real-world details, names, numbers, places
+- Mix registers — formal words next to casual ones in the same paragraph
+- Include one tangent or aside per paragraph
+- Use unexpected word choices. Don't pick the obvious synonym.
+- Break parallel structure deliberately
+- Some paragraphs should be ONE sentence. Others should be rambling.
+- Include questions that feel natural, not rhetorical
+- Write like you're thinking out loud, not composing
+- Do NOT inject filler words mechanically. They must flow naturally or not at all.`;
 
 // ============================================
 // LAYER 1: Persona-based LLM Rewrite
@@ -490,46 +479,23 @@ export async function rewriteText(options: RewriteOptions): Promise<RewriteResul
 
   const layersApplied: string[] = [];
 
-  // Layer 1: Persona-based LLM rewrite
+  // Layer 1: Persona-based LLM rewrite (does ALL the heavy lifting)
   let text = await llmRewrite(options.text, apiKey);
   layersApplied.push("persona-rewrite");
 
-  // Layer 2: Recursive paraphrasing (different model)
+  // Layer 2: Recursive paraphrasing (different model = different fingerprint)
   if (options.intensity !== "light") {
     text = await recursiveParaphrase(text, apiKey);
     layersApplied.push("recursive-paraphrase");
   }
 
-  // Layer 3: Advanced token perturbation with homoglyphs
-  text = perturbTokens(text, options.intensity === "aggressive");
-  layersApplied.push("token-perturbation");
-
-  // Layer 3.5: Embedding space perturbation
-  if (options.intensity !== "light") {
-    text = injectEmbeddingNoise(text, options.domain);
-    layersApplied.push("embedding-perturbation");
-  }
-
-  // Layer 3.7: Lexical diversity injection
-  if (options.intensity === "aggressive") {
-    text = injectLexicalDiversity(text);
-    layersApplied.push("lexical-diversity");
-  }
-
-  // Layer 4: Structural evasion
-  if (options.intensity === "aggressive") {
-    text = structuralEvasion(text);
-    layersApplied.push("structural-evasion");
-  }
-
-  // Layer 5: Post-processing
+  // Layer 3: Basic cleanup only — no mechanical injection
   text = postProcess(text);
   layersApplied.push("post-processing");
 
   // Hard length cap — trim if output is more than 15% longer than input
   const maxLen = Math.ceil(options.text.length * 1.15);
   if (text.length > maxLen) {
-    // Find the last sentence boundary within the limit
     const trimmed = text.slice(0, maxLen);
     const lastPeriod = Math.max(trimmed.lastIndexOf("."), trimmed.lastIndexOf("!"), trimmed.lastIndexOf("?"));
     if (lastPeriod > maxLen * 0.7) {
@@ -563,7 +529,7 @@ export async function rewriteIterative(
     current = result.rewritten;
     allLayers.push(...result.layersApplied);
 
-    const bannedWords = ["furthermore", "moreover", "additionally", "delve", "tapestry", "navigate", "leverage", "streamline", "robust", "comprehensive", "seamless", "pivotal", "crucial"];
+    const bannedWords = ["furthermore", "moreover", "additionally", "delve", "tapestry", "navigate", "leverage", "streamline", "robust", "comprehensive", "seamless", "pivotal", "crucial", "hence", "thus"];
     const hasBanned = bannedWords.some(w => new RegExp(`\\b${w}\\b`, "i").test(current));
     if (!hasBanned) break;
   }
@@ -573,6 +539,6 @@ export async function rewriteIterative(
     rewritten: current,
     passes,
     model: "meta/llama-3.3-70b-instruct + meta/llama-3.1-8b-instruct",
-    layersApplied: [...new Set(allLayers)],
+    layersApplied: Array.from(new Set(allLayers)),
   };
 }
