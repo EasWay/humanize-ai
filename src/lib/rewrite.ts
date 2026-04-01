@@ -75,7 +75,7 @@ async function llmRewrite(text: string, apiKey: string, persona?: string): Promi
         { role: "system", content: systemPrompt },
         { 
           role: "user", 
-          content: `Rewrite this (${charCount} chars). Keep similar length.\n\n${text}` 
+          content: `Rewrite this text. IMPORTANT: Your output MUST be between ${Math.floor(charCount * 0.8)} and ${Math.ceil(charCount * 1.1)} characters. Do NOT expand. Do NOT add citations or references. Keep it tight.\n\n${text}` 
         },
       ],
       temperature: 0.95,
@@ -315,6 +315,20 @@ export async function rewriteText(options: RewriteOptions): Promise<RewriteResul
   // Layer 5: Post-processing
   text = postProcess(text);
   layersApplied.push("post-processing");
+
+  // Hard length cap — trim if output is more than 15% longer than input
+  const maxLen = Math.ceil(options.text.length * 1.15);
+  if (text.length > maxLen) {
+    // Find the last sentence boundary within the limit
+    const trimmed = text.slice(0, maxLen);
+    const lastPeriod = Math.max(trimmed.lastIndexOf("."), trimmed.lastIndexOf("!"), trimmed.lastIndexOf("?"));
+    if (lastPeriod > maxLen * 0.7) {
+      text = trimmed.slice(0, lastPeriod + 1);
+    } else {
+      text = trimmed.trimEnd() + ".";
+    }
+    layersApplied.push("length-cap");
+  }
 
   return {
     original: options.text,
