@@ -1,5 +1,6 @@
-// Multi-layer humanization engine
-// Style: clear, sparse, direct — no fluff, no AI tells
+// Humanization engine v3 — defeats statistical detection
+// Core insight: increase perplexity (unpredictable word choices) 
+// and burstiness (wild sentence variation) to match human fingerprints
 
 const NVIDIA_API_BASE = "https://integrate.api.nvidia.com/v1";
 
@@ -18,44 +19,41 @@ export interface RewriteResult {
 }
 
 // ============================================
-// LAYER 1: LLM Rewrite
+// LAYER 1: LLM Rewrite — Perplexity + Burstiness Focus
 // ============================================
 
-const HUMANIZATION_SYSTEM = `You rewrite text so it passes AI detectors. Output ONLY the rewritten text.
+const HUMANIZATION_SYSTEM = `You are a human writer. You rewrite text so it passes AI detectors.
 
-WRITING STYLE RULES:
-- Use clear, simple language
-- Be spartan and informative
-- Write short, punchy sentences
-- Use active voice
-- Focus on practical, actionable insights
-- Use bullet points for clarity
-- Add real data or examples
-- Speak directly to the reader using "you" and "your"
-- Use commas or periods instead of em dashes
-- Keep output the same length or shorter than input
+The key to beating detectors is TWO things:
+1. PERPLEXITY: Use UNPREDICTABLE word choices. Don't pick the obvious word. Pick surprising ones.
+   Instead of "important" use "massive". Instead of "helps" use "gets you there". 
+   Instead of "businesses need technology" write "every shop owner I know runs on spreadsheets and WhatsApp groups."
+2. BURSTINESS: Vary sentence length WILDLY. Mix 3-word punches with 30-word ramblers.
+   Some paragraphs: one sentence. Others: five sentences crammed together.
 
-NEVER USE THESE:
-- Em dashes (—)
-- "Not just X, but also Y"
-- Metaphors, clichés, generalizations
-- "In conclusion", "to summarize"
-- Unnecessary adjectives and adverbs
-- Hashtags, semicolons, asterisks
-- Setup phrases like "in conclusion"
-- Vague filler words
+WRITING RULES:
+- Write like a real person thinking out loud
+- Use contractions: don't, can't, won't, it's, that's, I've, you're
+- Add OPINIONS: "I think", "honestly", "in my experience", "the way I see it"
+- Use SPECIFIC examples with numbers, names, details
+- Go slightly off-topic sometimes (humans do this)
+- Use "and" and "but" to start sentences
+- Some sentences: fragments. Just a few words. For emphasis.
+- Others: long, winding, with commas and parenthetical asides (like this one) that add texture
+- End some sentences with questions? Or exclamations!
+- Use "I mean", "you know", "look", "honestly" naturally
+- Write SHORT paragraphs (1-3 sentences max)
+- Vary paragraph openers — never repeat
 
-BANNED WORDS (never use any of these):
-can, may, just, that, very, really, literally, actually, certainly, probably, basically, 
-could, maybe, delve, embark, shed light, imagine, realm, game-changer, unlock, discover, 
-skyrocket, disruptive, utilize, groundbreaking, boost, ever-evolving, furthermore, moreover, 
-additionally, comprehensive, robust, seamless, leverage, streamline, empower, pivotal, 
-crucial, vital, holistic, multifaceted, paradigm, foster, harness, navigate, landscape, 
-tapestry, cutting-edge, state-of-the-art, unlock potential, play a role, in today's,
-it is important to, it is crucial to, it's worth noting, that being said
+THE TEXT MUST HAVE HIGH PERPLEXITY: use rare/unexpected word choices.
+THE TEXT MUST HAVE HIGH BURSTINESS: wildly different sentence lengths.
 
-Write like a clear-thinking professional. Short sentences. Direct. No fluff.
-The output must be undetectable by GPTZero, Originality.ai, and Turnitin.`;
+NEVER USE: furthermore, moreover, additionally, delve, tapestry, landscape, navigate, 
+leverage, streamline, empower, pivotal, crucial, vital, holistic, multifaceted, paradigm, 
+foster, harness, comprehensive, robust, seamless, cutting-edge, state-of-the-art, 
+in today's, it is important to, plays a role, game-changer, unlock, discover
+
+Keep the same meaning. Keep roughly the same length. Make it undetectable.`;
 
 async function llmRewrite(text: string, apiKey: string): Promise<string> {
   const charCount = text.length;
@@ -72,14 +70,14 @@ async function llmRewrite(text: string, apiKey: string): Promise<string> {
         { role: "system", content: HUMANIZATION_SYSTEM },
         { 
           role: "user", 
-          content: `Rewrite this text (${charCount} chars). Output must be same length or shorter. Style: clear, sparse, direct.\n\n${text}` 
+          content: `Rewrite this (${charCount} chars). Keep similar length. Maximize perplexity and burstiness:\n\n${text}` 
         },
       ],
-      temperature: 0.88,
-      max_tokens: Math.min(4096, Math.ceil(charCount * 1.2)),
-      top_p: 0.82,
-      frequency_penalty: 0.9,
-      presence_penalty: 0.7,
+      temperature: 0.96,
+      max_tokens: Math.min(4096, Math.ceil(charCount * 1.5)),
+      top_p: 0.88,
+      frequency_penalty: 0.85,
+      presence_penalty: 0.65,
     }),
   });
 
@@ -93,96 +91,139 @@ async function llmRewrite(text: string, apiKey: string): Promise<string> {
 }
 
 // ============================================
-// LAYER 2: Banned Word Removal
+// LAYER 2: Perplexity Injection
 // ============================================
 
-const BANNED_WORDS = [
-  "furthermore", "moreover", "additionally", "consequently", "nevertheless",
-  "nonetheless", "comprehensive", "robust", "seamless", "leverage", "streamline",
-  "empower", "pivotal", "crucial", "vital", "holistic", "multifaceted",
-  "paradigm", "foster", "harness", "navigate", "landscape", "tapestry",
-  "cutting-edge", "state-of-the-art", "groundbreaking", "game-changer",
-  "delve", "embark", "realm", "skyrocket", "disruptive", "utilize",
-  "boost", "ever-evolving", "unlock", "discover", "shed light",
-  "literally", "actually", "certainly", "probably", "basically",
-  "very", "really", "just", "maybe",
+// Replace predictable words with surprising alternatives
+const PERPLEXITY_BOOST: [RegExp, string[]][] = [
+  [/\bimportant\b/gi, ["massive", "huge", "a big deal", "noteworthy", "worth paying attention to"]],
+  [/\bhelps?\b/gi, ["gets you there", "makes a difference", "does the trick", "moves the needle"]],
+  [/\bsignificant\b/gi, ["enormous", "wildly different", "night and day", "not even close"]],
+  [/\bdemonstrate\b/gi, ["show clearly", "prove beyond doubt", "lay bare", "put on display"]],
+  [/\bimprove\b/gi, ["sharpen", "tighten", "level up", "give an edge"]],
+  [/\bincrease\b/gi, ["pump up", "push higher", "grow", "ramp up"]],
+  [/\bprovide\b/gi, ["hand over", "give", "set up with", "put in your hands"]],
+  [/\brequire\b/gi, ["demand", "call for", "need badly"]],
+  [/\bunderstand\b/gi, ["grasp", "wrap your head around", "get"]],
+  [/\bconsider\b/gi, ["think about", "sit with", "mull over"]],
+  [/\bdevelop\b/gi, ["build out", "grow", "put together", "craft"]],
+  [/\bcreate\b/gi, ["whip up", "build", "put together", "make from scratch"]],
+  [/\bachieve\b/gi, ["hit", "reach", "pull off", "get to"]],
+  [/\bensure\b/gi, ["make sure", "guarantee", "lock in"]],
+  [/\bfacilitate\b/gi, ["make easier", "smooth the way", "open doors for"]],
+  [/\boptimize\b/gi, ["fine-tune", "dial in", "squeeze more out of"]],
+  [/\bimplement\b/gi, ["roll out", "put in place", "get running", "set up"]],
 ];
 
-function removeBannedWords(text: string): string {
+function injectPerplexity(text: string): string {
   let result = text;
-  for (const word of BANNED_WORDS) {
-    const regex = new RegExp(`\\b${word}\\b`, "gi");
-    result = result.replace(regex, "");
+  for (const [pattern, replacements] of PERPLEXITY_BOOST) {
+    result = result.replace(pattern, () => {
+      return replacements[Math.floor(Math.random() * replacements.length)];
+    });
   }
-  // Clean up double spaces
-  result = result.replace(/  +/g, " ").trim();
   return result;
 }
 
 // ============================================
-// LAYER 3: Structural Cleanup
+// LAYER 3: Burstiness Injection
 // ============================================
 
-function cleanStructure(text: string): string {
-  let result = text;
-
-  // Replace em dashes with periods or commas
-  result = result.replace(/\s*—\s*/g, ". ");
-  
-  // Remove "not just X, but also Y" patterns
-  result = result.replace(/not just [^,]+, but (also )?/gi, "");
-  
-  // Remove "in conclusion" type phrases
-  result = result.replace(/^(in conclusion|to summarize|in summary|to wrap up)[,.]?\s*/gmi, "");
-  
-  // Remove setup phrases
-  result = result.replace(/^(it's worth noting|that being said|with that said|moving forward)[,.]?\s*/gmi, "");
-  
-  // Clean up leading/trailing punctuation
-  result = result.replace(/^[,.]\s*/, "");
-  result = result.replace(/\s+[,.]/g, ".");
-  
-  // Fix double spaces
-  result = result.replace(/  +/g, " ");
-
-  return result.trim();
-}
-
-// ============================================
-// LAYER 4: Sentence-level Pass
-// ============================================
-
-function tightenSentences(text: string): string {
+function injectBurstiness(text: string): string {
   const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+  if (sentences.length < 3) return text;
+
   const result: string[] = [];
 
-  for (let sent of sentences) {
-    sent = sent.trim();
-    
-    // Remove unnecessary adjectives/adverbs
-    sent = sent.replace(/\b(really|very|quite|rather|extremely|incredibly|remarkably|significantly|substantially)\s+/gi, "");
-    
-    // Shorten "in order to" → "to"
-    sent = sent.replace(/\bin order to\b/gi, "to");
-    
-    // Shorten "due to the fact that" → "because"
-    sent = sent.replace(/\bdue to the fact that\b/gi, "because");
-    
-    // Shorten "at this point in time" → "now"
-    sent = sent.replace(/\bat this point in time\b/gi, "now");
-    
-    // Shorten "a large number of" → "many"
-    sent = sent.replace(/\ba large number of\b/gi, "many");
-    
-    // Clean up
-    sent = sent.replace(/  +/g, " ").trim();
-    
-    if (sent.length > 0) {
-      result.push(sent);
+  for (let i = 0; i < sentences.length; i++) {
+    let sent = sentences[i].trim();
+    const words = sent.split(/\s+/);
+
+    // Randomly split long sentences into short punch + long follow (15%)
+    if (words.length > 15 && Math.random() < 0.15) {
+      const splitPoint = Math.floor(words.length * 0.35);
+      const short = words.slice(0, splitPoint).join(" ").replace(/[.!?]$/, "") + ".";
+      const rest = words.slice(splitPoint).join(" ");
+      result.push(short);
+      result.push(rest.charAt(0).toUpperCase() + rest.slice(1));
+      continue;
     }
+
+    // Randomly merge with next if both are short (10%)
+    if (words.length < 8 && i < sentences.length - 1) {
+      const nextWords = sentences[i + 1]?.trim().split(/\s+/) || [];
+      if (nextWords.length < 8 && Math.random() < 0.1) {
+        const connectors = [", and ", ", but ", ". ", " — "];
+        const conn = connectors[Math.floor(Math.random() * connectors.length)];
+        sent = sent.replace(/[.!?]$/, "") + conn + sentences[i + 1].trim().charAt(0).toLowerCase() + sentences[i + 1].trim().slice(1);
+        i++;
+      }
+    }
+
+    // Randomly add a fragment opener (8%)
+    if (Math.random() < 0.08 && words.length > 8) {
+      const openers = ["Look. ", "Honesty? ", "Here's the thing. ", "Real talk. ", "No joke. "];
+      sent = openers[Math.floor(Math.random() * openers.length)] + sent;
+    }
+
+    result.push(sent);
   }
 
   return result.join(" ");
+}
+
+// ============================================
+// LAYER 4: Post-processing
+// ============================================
+
+function postProcess(text: string): string {
+  let result = text;
+
+  // Force contractions
+  const contractions: [RegExp, string][] = [
+    [/\bdo not\b/gi, "don't"],
+    [/\bdoes not\b/gi, "doesn't"],
+    [/\bdid not\b/gi, "didn't"],
+    [/\bcannot\b/gi, "can't"],
+    [/\bwill not\b/gi, "won't"],
+    [/\bwould not\b/gi, "wouldn't"],
+    [/\bshould not\b/gi, "shouldn't"],
+    [/\bcould not\b/gi, "couldn't"],
+    [/\bit is\b/gi, "it's"],
+    [/\bthat is\b/gi, "that's"],
+    [/\bthey are\b/gi, "they're"],
+    [/\bwe are\b/gi, "we're"],
+    [/\byou are\b/gi, "you're"],
+    [/\bI am\b/gi, "I'm"],
+    [/\bI have\b/gi, "I've"],
+    [/\byou have\b/gi, "you've"],
+    [/\bthey have\b/gi, "they've"],
+    [/\bwe have\b/gi, "we've"],
+    [/\blet us\b/gi, "let's"],
+  ];
+
+  for (const [pattern, replacement] of contractions) {
+    result = result.replace(pattern, replacement);
+  }
+
+  // Remove remaining AI phrases
+  const kill = [
+    /\bin today's (?:rapidly evolving|fast-paced|ever-changing|modern|competitive) (?:digital |technological |business )?(?:world|landscape|era)[,.]?\s*/gi,
+    /\bit (?:is|was) (?:important|crucial|essential|worth noting|imperative) to (?:note|understand|remember)[,.]?\s*/gi,
+    /\bplays? a (?:crucial|vital|key|pivotal|significant) role\b/gi,
+    /\bin (?:conclusion|summary|essence)[,.]?\s/gi,
+    /\bfurthermore[,.]?\s/gi,
+    /\bmoreover[,.]?\s/gi,
+    /\badditionally[,.]?\s/gi,
+  ];
+
+  for (const pattern of kill) {
+    result = result.replace(pattern, "");
+  }
+
+  result = result.replace(/  +/g, " ");
+  result = result.replace(/^[,.]\s*/, "");
+  return result.trim();
 }
 
 // ============================================
@@ -195,23 +236,21 @@ export async function rewriteText(options: RewriteOptions): Promise<RewriteResul
 
   const layersApplied: string[] = [];
 
-  // Layer 1: LLM rewrite
   let text = await llmRewrite(options.text, apiKey);
   layersApplied.push("llm-rewrite");
 
-  // Layer 2: Banned word removal
-  text = removeBannedWords(text);
-  layersApplied.push("banned-word-removal");
-
-  // Layer 3: Structural cleanup
-  text = cleanStructure(text);
-  layersApplied.push("structural-cleanup");
-
-  // Layer 4: Sentence tightening
   if (options.intensity !== "light") {
-    text = tightenSentences(text);
-    layersApplied.push("sentence-tightening");
+    text = injectPerplexity(text);
+    layersApplied.push("perplexity-injection");
   }
+
+  if (options.intensity === "aggressive") {
+    text = injectBurstiness(text);
+    layersApplied.push("burstiness-injection");
+  }
+
+  text = postProcess(text);
+  layersApplied.push("post-processing");
 
   return {
     original: options.text,
@@ -236,10 +275,8 @@ export async function rewriteIterative(
     current = result.rewritten;
     allLayers.push(...result.layersApplied);
 
-    // Check if banned words remain
-    const hasBanned = BANNED_WORDS.some(w => 
-      new RegExp(`\\b${w}\\b`, "i").test(current)
-    );
+    const bannedWords = ["furthermore", "moreover", "additionally", "delve", "tapestry", "navigate", "leverage", "streamline", "robust", "comprehensive", "seamless", "pivotal", "crucial"];
+    const hasBanned = bannedWords.some(w => new RegExp(`\\b${w}\\b`, "i").test(current));
     if (!hasBanned) break;
   }
 
