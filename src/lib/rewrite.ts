@@ -1,6 +1,6 @@
-// Humanization engine v3 — defeats statistical detection
-// Core insight: increase perplexity (unpredictable word choices) 
-// and burstiness (wild sentence variation) to match human fingerprints
+// Humanization engine v4 — Adversarial NLP techniques
+// Techniques: persona injection, recursive paraphrasing, token perturbation,
+// structural evasion, statistical fingerprint disruption
 
 const NVIDIA_API_BASE = "https://integrate.api.nvidia.com/v1";
 
@@ -19,45 +19,50 @@ export interface RewriteResult {
 }
 
 // ============================================
-// LAYER 1: LLM Rewrite — Perplexity + Burstiness Focus
+// PERSONA TEMPLATES — Different voices defeat detectors
 // ============================================
 
-const HUMANIZATION_SYSTEM = `You are a human writer. You rewrite text so it passes AI detectors.
+const PERSONAS = [
+  // Casual blogger
+  `You're a casual blogger writing from experience. You use slang, contractions, and personal anecdotes. You write like you're talking to a friend over coffee. Short paragraphs. Lots of "I think" and "honestly" and "you know." You go on small tangents. You use "lol" sometimes.`,
+  // Non-native English speaker
+  `You're writing as a non-native English speaker who's fluent but has slight quirks. Occasionally you use slightly unusual phrasing or word order. You're direct and to the point. You sometimes skip articles ("the", "a"). Your vocabulary is good but not fancy.`,
+  // Technical professional
+  `You're a senior technical professional writing an internal memo. You use industry jargon naturally. You're concise because you're busy. You use bullet points. You don't waste words. You abbreviate. You use passive voice occasionally for technical descriptions.`,
+  // Journalist
+  `You're an experienced journalist. You write tight, active-voice prose. You use quotes and specific details. You vary sentence length for rhythm. You never use cliches. You show, don't tell. You use em dashes sparingly — for asides only.`,
+  // Academic researcher
+  `You're a PhD researcher writing for a peer-reviewed journal. You use precise technical vocabulary. You cite specific studies. You use passive voice in methods sections. You're formal but not robotic. You avoid hedging language.`,
+  // Creative writer
+  `You're a creative writer with a distinctive voice. You use sensory details. You break grammar rules intentionally for effect. You use fragments. You vary rhythm dramatically. You use metaphors but not clichés. You have opinions.`,
+];
 
-The key to beating detectors is TWO things:
-1. PERPLEXITY: Use UNPREDICTABLE word choices. Don't pick the obvious word. Pick surprising ones.
-   Instead of "important" use "massive". Instead of "helps" use "gets you there". 
-   Instead of "businesses need technology" write "every shop owner I know runs on spreadsheets and WhatsApp groups."
-2. BURSTINESS: Vary sentence length WILDLY. Mix 3-word punches with 30-word ramblers.
-   Some paragraphs: one sentence. Others: five sentences crammed together.
+const PERSONA_PROMPT = `You rewrite text so it passes AI detectors. Output ONLY the rewritten text.
 
-WRITING RULES:
-- Write like a real person thinking out loud
-- Use contractions: don't, can't, won't, it's, that's, I've, you're
-- Add OPINIONS: "I think", "honestly", "in my experience", "the way I see it"
-- Use SPECIFIC examples with numbers, names, details
-- Go slightly off-topic sometimes (humans do this)
-- Use "and" and "but" to start sentences
-- Some sentences: fragments. Just a few words. For emphasis.
-- Others: long, winding, with commas and parenthetical asides (like this one) that add texture
-- End some sentences with questions? Or exclamations!
-- Use "I mean", "you know", "look", "honestly" naturally
-- Write SHORT paragraphs (1-3 sentences max)
-- Vary paragraph openers — never repeat
+Use this writing persona:
+`;
 
-THE TEXT MUST HAVE HIGH PERPLEXITY: use rare/unexpected word choices.
-THE TEXT MUST HAVE HIGH BURSTINESS: wildly different sentence lengths.
+const BASE_RULES = `
+RULES:
+- Keep the same meaning and roughly the same length
+- Use contractions (don't, can't, it's, you're, I've)
+- Never use: furthermore, moreover, additionally, delve, tapestry, landscape, navigate, leverage, streamline, empower, pivotal, crucial, vital, holistic, multifaceted, paradigm, foster, harness, comprehensive, robust, seamless, cutting-edge, state-of-the-art, in today's, it is important to, plays a role, game-changer
+- Vary sentence length wildly (some 3 words, some 30)
+- Add specific details, numbers, names
+- The text must have HIGH PERPLEXITY (unpredictable word choices)
+- The text must have HIGH BURSTINESS (wild sentence length variation)
+- Write SHORT paragraphs (1-3 sentences)
+- Break symmetrical patterns`;
 
-NEVER USE: furthermore, moreover, additionally, delve, tapestry, landscape, navigate, 
-leverage, streamline, empower, pivotal, crucial, vital, holistic, multifaceted, paradigm, 
-foster, harness, comprehensive, robust, seamless, cutting-edge, state-of-the-art, 
-in today's, it is important to, plays a role, game-changer, unlock, discover
+// ============================================
+// LAYER 1: Persona-based LLM Rewrite
+// ============================================
 
-Keep the same meaning. Keep roughly the same length. Make it undetectable.`;
-
-async function llmRewrite(text: string, apiKey: string): Promise<string> {
+async function llmRewrite(text: string, apiKey: string, persona?: string): Promise<string> {
   const charCount = text.length;
-  
+  const selectedPersona = persona || PERSONAS[Math.floor(Math.random() * PERSONAS.length)];
+  const systemPrompt = PERSONA_PROMPT + selectedPersona + BASE_RULES;
+
   const response = await fetch(`${NVIDIA_API_BASE}/chat/completions`, {
     method: "POST",
     headers: {
@@ -67,17 +72,17 @@ async function llmRewrite(text: string, apiKey: string): Promise<string> {
     body: JSON.stringify({
       model: "meta/llama-3.3-70b-instruct",
       messages: [
-        { role: "system", content: HUMANIZATION_SYSTEM },
+        { role: "system", content: systemPrompt },
         { 
           role: "user", 
-          content: `Rewrite this (${charCount} chars). Keep similar length. Maximize perplexity and burstiness:\n\n${text}` 
+          content: `Rewrite this (${charCount} chars). Keep similar length.\n\n${text}` 
         },
       ],
-      temperature: 0.96,
-      max_tokens: Math.min(4096, Math.ceil(charCount * 1.5)),
-      top_p: 0.88,
+      temperature: 0.95,
+      max_tokens: Math.min(4096, Math.ceil(charCount * 1.4)),
+      top_p: 0.87,
       frequency_penalty: 0.85,
-      presence_penalty: 0.65,
+      presence_penalty: 0.6,
     }),
   });
 
@@ -91,45 +96,100 @@ async function llmRewrite(text: string, apiKey: string): Promise<string> {
 }
 
 // ============================================
-// LAYER 2: Perplexity Injection
+// LAYER 2: Recursive Paraphrasing
 // ============================================
 
-// Replace predictable words with surprising alternatives
-const PERPLEXITY_BOOST: [RegExp, string[]][] = [
-  [/\bimportant\b/gi, ["massive", "huge", "a big deal", "noteworthy", "worth paying attention to"]],
-  [/\bhelps?\b/gi, ["gets you there", "makes a difference", "does the trick", "moves the needle"]],
-  [/\bsignificant\b/gi, ["enormous", "wildly different", "night and day", "not even close"]],
-  [/\bdemonstrate\b/gi, ["show clearly", "prove beyond doubt", "lay bare", "put on display"]],
-  [/\bimprove\b/gi, ["sharpen", "tighten", "level up", "give an edge"]],
-  [/\bincrease\b/gi, ["pump up", "push higher", "grow", "ramp up"]],
-  [/\bprovide\b/gi, ["hand over", "give", "set up with", "put in your hands"]],
-  [/\brequire\b/gi, ["demand", "call for", "need badly"]],
-  [/\bunderstand\b/gi, ["grasp", "wrap your head around", "get"]],
-  [/\bconsider\b/gi, ["think about", "sit with", "mull over"]],
-  [/\bdevelop\b/gi, ["build out", "grow", "put together", "craft"]],
-  [/\bcreate\b/gi, ["whip up", "build", "put together", "make from scratch"]],
-  [/\bachieve\b/gi, ["hit", "reach", "pull off", "get to"]],
-  [/\bensure\b/gi, ["make sure", "guarantee", "lock in"]],
-  [/\bfacilitate\b/gi, ["make easier", "smooth the way", "open doors for"]],
-  [/\boptimize\b/gi, ["fine-tune", "dial in", "squeeze more out of"]],
-  [/\bimplement\b/gi, ["roll out", "put in place", "get running", "set up"]],
-];
+// Pass text through a second specialized paraphrase model
+// This disrupts stylistic watermarks from the first pass
+async function recursiveParaphrase(text: string, apiKey: string): Promise<string> {
+  const paraphrasePrompt = `You are a text paraphraser. Rewrite the following text to express the same meaning but with completely different words, sentence structures, and flow. 
 
-function injectPerplexity(text: string): string {
+Rules:
+- Use different vocabulary (pick less common synonyms)
+- Restructure sentences (change from active to passive or vice versa)
+- Reorder ideas within paragraphs
+- Add or remove transitional phrases
+- Keep the same length
+- Output ONLY the rewritten text`;
+
+  const response = await fetch(`${NVIDIA_API_BASE}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: "meta/llama-3.1-8b-instruct", // Different model = different fingerprint
+      messages: [
+        { role: "system", content: paraphrasePrompt },
+        { role: "user", content: text },
+      ],
+      temperature: 0.9,
+      max_tokens: Math.min(4096, Math.ceil(text.length * 1.3)),
+      top_p: 0.85,
+    }),
+  });
+
+  if (!response.ok) return text; // Fallback — don't fail the whole pipeline
+
+  const data = await response.json();
+  return data.choices[0]?.message?.content?.trim() || text;
+}
+
+// ============================================
+// LAYER 3: Token-Level Perturbation
+// ============================================
+
+// Replace high-confidence words with less probable synonyms
+// This targets the token probability distribution that detectors analyze
+const PERTURBATION_MAP: Record<string, string[]> = {
+  // Common words → less probable alternatives
+  "important": ["massive", "sizable", "weighty", "notable", "marked"],
+  "helps": ["pushes", "gets you there", "moves things along", "does the heavy lifting"],
+  "significant": ["enormous", "wild", "jarring", "night-and-day", "not even close"],
+  "shows": ["lays bare", "puts on display", "makes plain", "drives home"],
+  "improves": ["sharpens", "tightens", "gives an edge", "levels up", "polishes"],
+  "increases": ["pumps up", "pushes higher", "ramps up", "drives up", "climbs"],
+  "provides": ["hands over", "sets up with", "puts in your hands", "delivers"],
+  "requires": ["demands", "calls for", "needs badly", "can't go without"],
+  "understands": ["grasps", "gets", "sees clearly", "has a handle on"],
+  "considers": ["thinks about", "sits with", "mulls over", "weighs"],
+  "develops": ["builds out", "grows", "puts together", "crafts"],
+  "creates": ["whips up", "builds from scratch", "puts together", "concocts"],
+  "achieves": ["hits", "reaches", "pulls off", "lands"],
+  "ensures": ["makes sure", "locks in", "guarantees"],
+  "facilitates": ["makes easier", "smooths the way", "opens doors for", "clears the path"],
+  "optimizes": ["fine-tunes", "dials in", "squeezes more out of"],
+  "implements": ["rolls out", "puts in place", "gets running", "sets in motion"],
+  "demonstrates": ["shows clearly", "proves", "lays out", "drives home"],
+  "enables": ["opens the door for", "sets the stage for", "makes possible"],
+  "establishes": ["sets up", "puts down roots", "builds the foundation for"],
+  // Connector words
+  "however": ["but", "though", "still", "yet", "that said"],
+  "therefore": ["so", "which means", "that's why", "end result"],
+  "consequently": ["so", "because of that", "which led to"],
+  "subsequently": ["after that", "then", "down the line", "next up"],
+  "meanwhile": ["at the same time", "in the background", "while that's happening"],
+};
+
+function perturbTokens(text: string): string {
   let result = text;
-  for (const [pattern, replacements] of PERPLEXITY_BOOST) {
-    result = result.replace(pattern, () => {
-      return replacements[Math.floor(Math.random() * replacements.length)];
+  
+  for (const [word, alternatives] of Object.entries(PERTURBATION_MAP)) {
+    const regex = new RegExp(`\\b${word}\\b`, "gi");
+    result = result.replace(regex, () => {
+      return alternatives[Math.floor(Math.random() * alternatives.length)];
     });
   }
+
   return result;
 }
 
 // ============================================
-// LAYER 3: Burstiness Injection
+// LAYER 4: Structural Evasion
 // ============================================
 
-function injectBurstiness(text: string): string {
+function structuralEvasion(text: string): string {
   const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
   if (sentences.length < 3) return text;
 
@@ -139,30 +199,26 @@ function injectBurstiness(text: string): string {
     let sent = sentences[i].trim();
     const words = sent.split(/\s+/);
 
-    // Randomly split long sentences into short punch + long follow (15%)
+    // Split long sentences at random points (15%)
     if (words.length > 15 && Math.random() < 0.15) {
-      const splitPoint = Math.floor(words.length * 0.35);
-      const short = words.slice(0, splitPoint).join(" ").replace(/[.!?]$/, "") + ".";
-      const rest = words.slice(splitPoint).join(" ");
-      result.push(short);
-      result.push(rest.charAt(0).toUpperCase() + rest.slice(1));
+      const splitAt = Math.floor(words.length * (0.3 + Math.random() * 0.3));
+      result.push(words.slice(0, splitAt).join(" ").replace(/[.!?]$/, "") + ".");
+      result.push(words.slice(splitAt).join(" "));
       continue;
     }
 
-    // Randomly merge with next if both are short (10%)
-    if (words.length < 8 && i < sentences.length - 1) {
-      const nextWords = sentences[i + 1]?.trim().split(/\s+/) || [];
-      if (nextWords.length < 8 && Math.random() < 0.1) {
-        const connectors = [", and ", ", but ", ". ", " — "];
-        const conn = connectors[Math.floor(Math.random() * connectors.length)];
-        sent = sent.replace(/[.!?]$/, "") + conn + sentences[i + 1].trim().charAt(0).toLowerCase() + sentences[i + 1].trim().slice(1);
+    // Merge short adjacent sentences (10%)
+    if (words.length < 7 && i < sentences.length - 1) {
+      const next = sentences[i + 1]?.trim() || "";
+      if (next.split(/\s+/).length < 7 && Math.random() < 0.1) {
+        sent = sent.replace(/[.!?]$/, "") + ", and " + next.charAt(0).toLowerCase() + next.slice(1);
         i++;
       }
     }
 
-    // Randomly add a fragment opener (8%)
-    if (Math.random() < 0.08 && words.length > 8) {
-      const openers = ["Look. ", "Honesty? ", "Here's the thing. ", "Real talk. ", "No joke. "];
+    // Insert fragment openers (8%)
+    if (Math.random() < 0.08 && words.length > 6) {
+      const openers = ["Look. ", "Here's the thing. ", "Real talk. ", "Honestly? ", "No joke. "];
       sent = openers[Math.floor(Math.random() * openers.length)] + sent;
     }
 
@@ -173,7 +229,7 @@ function injectBurstiness(text: string): string {
 }
 
 // ============================================
-// LAYER 4: Post-processing
+// LAYER 5: Post-processing
 // ============================================
 
 function postProcess(text: string): string {
@@ -206,7 +262,7 @@ function postProcess(text: string): string {
     result = result.replace(pattern, replacement);
   }
 
-  // Remove remaining AI phrases
+  // Kill remaining AI phrases
   const kill = [
     /\bin today's (?:rapidly evolving|fast-paced|ever-changing|modern|competitive) (?:digital |technological |business )?(?:world|landscape|era)[,.]?\s*/gi,
     /\bit (?:is|was) (?:important|crucial|essential|worth noting|imperative) to (?:note|understand|remember)[,.]?\s*/gi,
@@ -236,19 +292,27 @@ export async function rewriteText(options: RewriteOptions): Promise<RewriteResul
 
   const layersApplied: string[] = [];
 
+  // Layer 1: Persona-based LLM rewrite
   let text = await llmRewrite(options.text, apiKey);
-  layersApplied.push("llm-rewrite");
+  layersApplied.push("persona-rewrite");
 
+  // Layer 2: Recursive paraphrasing (different model)
   if (options.intensity !== "light") {
-    text = injectPerplexity(text);
-    layersApplied.push("perplexity-injection");
+    text = await recursiveParaphrase(text, apiKey);
+    layersApplied.push("recursive-paraphrase");
   }
 
+  // Layer 3: Token perturbation
+  text = perturbTokens(text);
+  layersApplied.push("token-perturbation");
+
+  // Layer 4: Structural evasion
   if (options.intensity === "aggressive") {
-    text = injectBurstiness(text);
-    layersApplied.push("burstiness-injection");
+    text = structuralEvasion(text);
+    layersApplied.push("structural-evasion");
   }
 
+  // Layer 5: Post-processing
   text = postProcess(text);
   layersApplied.push("post-processing");
 
@@ -256,7 +320,7 @@ export async function rewriteText(options: RewriteOptions): Promise<RewriteResul
     original: options.text,
     rewritten: text,
     passes: 1,
-    model: "meta/llama-3.3-70b-instruct",
+    model: "meta/llama-3.3-70b-instruct + meta/llama-3.1-8b-instruct",
     layersApplied,
   };
 }
@@ -284,7 +348,7 @@ export async function rewriteIterative(
     original: options.text,
     rewritten: current,
     passes,
-    model: "meta/llama-3.3-70b-instruct",
+    model: "meta/llama-3.3-70b-instruct + meta/llama-3.1-8b-instruct",
     layersApplied: [...new Set(allLayers)],
   };
 }
