@@ -21,6 +21,8 @@ export default function Home() {
   const [fileFormat, setFileFormat] = useState("txt");
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
+  const [docxJobId, setDocxJobId] = useState<string | null>(null);
+  const [docxV2, setDocxV2] = useState(false);
 
   // Job state
   const [jobId, setJobId] = useState<string | null>(null);
@@ -56,6 +58,8 @@ export default function Home() {
       const data = await res.json();
       setInput(data.text);
       if (data.blocks) setBlocks(data.blocks);
+      setDocxJobId(data.docxJobId || null);
+      setDocxV2(data.docxV2 || false);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Upload failed");
       setFileName("");
@@ -148,7 +152,7 @@ export default function Home() {
         const res = await fetch("/api/download", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: job.output, format: "docx", fileName: name, blocks }),
+          body: JSON.stringify({ text: job.output, format: "docx", fileName: name, blocks, docxV2, docxJobId }),
         });
         if (!res.ok) throw new Error("Download failed");
         const blob = await res.blob();
@@ -361,7 +365,7 @@ export default function Home() {
             {/* New Job Button */}
             {(job.status === "done" || job.status === "error") && (
               <button
-                onClick={() => { setJobId(null); setJob(null); setInput(""); setFileName(""); setFileFormat("txt"); setBlocks([]); }}
+                onClick={() => { setJobId(null); setJob(null); setInput(""); setFileName(""); setFileFormat("txt"); setBlocks([]); setDocxJobId(null); setDocxV2(false); }}
                 className="w-full px-5 py-3 bg-zinc-100 hover:bg-zinc-200 text-sm font-medium rounded-xl transition"
               >
                 Humanize Another Document
