@@ -16,6 +16,7 @@ interface JobStatus {
 
 export default function Home() {
   const [input, setInput] = useState("");
+  const [blocks, setBlocks] = useState<Array<{ type: string; text: string; level?: number }>>([]);
   const [fileName, setFileName] = useState("");
   const [fileFormat, setFileFormat] = useState("txt");
   const [uploading, setUploading] = useState(false);
@@ -54,6 +55,7 @@ export default function Home() {
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       setInput(data.text);
+      if (data.blocks) setBlocks(data.blocks);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Upload failed");
       setFileName("");
@@ -73,7 +75,7 @@ export default function Home() {
       const res = await fetch("/api/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: input, fileName, fileFormat }),
+        body: JSON.stringify({ text: input, fileName, fileFormat, blocks }),
       });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
@@ -146,7 +148,7 @@ export default function Home() {
         const res = await fetch("/api/download", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: job.output, format: "docx", fileName: name }),
+          body: JSON.stringify({ text: job.output, format: "docx", fileName: name, blocks }),
         });
         if (!res.ok) throw new Error("Download failed");
         const blob = await res.blob();
@@ -173,6 +175,20 @@ export default function Home() {
     a.click();
     URL.revokeObjectURL(url);
   }
+
+  // Cancel ongoing humanization
+  const handleCancel = async () => {
+    if (!jobId) return;
+    try {
+      await fetch("/api/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: jobId }),
+      });
+    } catch { /* ignore */ }
+    setJob(prev => prev ? { ...prev, status: "error", error: "Cancelled" } : prev);
+    if (pollRef.current) clearInterval(pollRef.current);
+  };
 
   return (
     <div className="min-h-screen bg-white text-zinc-900 font-sans">
@@ -312,9 +328,17 @@ export default function Home() {
 
               {/* Tip while waiting */}
               {job.status === "processing" && (
-                <p className="text-xs text-zinc-400 mt-4">
-                  You can close this tab and come back. Your result will be ready when you return.
-                </p>
+                <div className="mt-4 flex items-center justify-between">
+                  <p className="text-xs text-zinc-400">
+                    You can close this tab and come back. Your result will be ready when you return.
+                  </p>
+                  <button
+                    onClick={handleCancel}
+                    className="text-xs text-red-500 hover:text-red-400 font-medium ml-4 shrink-0"
+                  >
+                    Cancel
+                  </button>
+                </div>
               )}
             </div>
 
@@ -337,7 +361,7 @@ export default function Home() {
             {/* New Job Button */}
             {(job.status === "done" || job.status === "error") && (
               <button
-                onClick={() => { setJobId(null); setJob(null); setInput(""); setFileName(""); setFileFormat("txt"); }}
+                onClick={() => { setJobId(null); setJob(null); setInput(""); setFileName(""); setFileFormat("txt"); setBlocks([]); }}
                 className="w-full px-5 py-3 bg-zinc-100 hover:bg-zinc-200 text-sm font-medium rounded-xl transition"
               >
                 Humanize Another Document

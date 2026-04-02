@@ -10,6 +10,7 @@ export interface Job {
   output: string;
   fileName: string;
   fileFormat: string;
+  blocks: Array<{ type: string; text: string; level?: number }>;
   chunksTotal: number;
   chunksDone: number;
   error: string;
@@ -68,7 +69,7 @@ export function getLastJob(): Job | undefined {
   return latest;
 }
 
-export function createJob(input: string, fileName: string, fileFormat: string, totalChunks: number): Job {
+export function createJob(input: string, fileName: string, fileFormat: string, totalChunks: number, blocks: Array<{ type: string; text: string; level?: number }> = []): Job {
   const id = Math.random().toString(36).slice(2, 10);
   const job: Job = {
     id,
@@ -77,6 +78,7 @@ export function createJob(input: string, fileName: string, fileFormat: string, t
     output: "",
     fileName,
     fileFormat,
+    blocks,
     chunksTotal: totalChunks,
     chunksDone: 0,
     error: "",

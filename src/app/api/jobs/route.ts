@@ -63,6 +63,11 @@ async function processJob(jobId: string) {
 
       rewritten.push(result.rewritten);
 
+      // Check if cancelled
+      if (getJob(jobId)?.status === "error") {
+        return; // stop processing
+      }
+
       // Delay between chunks
       if (i < chunks.length - 1) {
         await new Promise(r => setTimeout(r, 2000));
@@ -85,14 +90,14 @@ async function processJob(jobId: string) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { text, fileName = "", fileFormat = "txt" } = body;
+    const { text, fileName = "", fileFormat = "txt", blocks = [] } = body;
 
     if (!text || typeof text !== "string") {
       return NextResponse.json({ error: "Missing 'text' field" }, { status: 400 });
     }
 
     const chunks = chunkText(text);
-    const job = createJob(text, fileName, fileFormat, chunks.length);
+    const job = createJob(text, fileName, fileFormat, chunks.length, blocks);
 
     // Start processing in background (non-blocking)
     processJob(job.id);

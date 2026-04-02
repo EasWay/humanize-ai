@@ -2,143 +2,168 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType,
-  PageNumber, Footer, Header, TabStopType, TabStopPosition,
-  UnderlineType, BorderStyle, SectionType, ShadingType, TableCell, Table, TableRow, WidthType
+  PageNumber, Footer, UnderlineType, ShadingType, WidthType,
+  Table, TableRow, TableCell, BorderStyle
 } from "docx";
 
-const INCH = 1440; // 1 inch in twips
+const INCH = 1440;
 const HALF_INCH = 720;
-const POINT = 2; // 1 point = 2 twips
-
-// Academic style constants
 const FONT = "Times New Roman";
 const BODY_SIZE = 24; // 12pt
 const HEADING1_SIZE = 32; // 16pt
 const HEADING2_SIZE = 28; // 14pt
 const HEADING3_SIZE = 24; // 12pt
+const TABLE_SIZE = 22; // 11pt
 
-// Heading detection patterns
+// ─── Heading detection fallback (for text without block metadata) ───────────
+
 const ALL_CAPS_HEADING = /^[A-Z][A-Z\s\d.,:;-]+$/;
-const NUMBERED_HEADING = /^\d+(\.\d+)*\.?\s+[A-Z]/;
 const CHAPTER_HEADING = /^(CHAPTER|APPENDIX|SECTION)\s+\d/i;
 
-function isHeading1(line: string): boolean {
+function detectHeadingLevel(line: string): number | null {
   const t = line.trim();
-  if (t.length < 3 || t.length > 120) return false;
-  // CHAPTER X, APPENDIX X, or ALL CAPS short lines
-  if (CHAPTER_HEADING.test(t)) return true;
-  if (ALL_CAPS_HEADING.test(t) && t.length > 5 && t.length < 100) return true;
-  return false;
-}
-
-function isHeading2(line: string): boolean {
-  const t = line.trim();
-  if (t.length < 3 || t.length > 150) return false;
-  // Pattern: "5.1 Introduction", "4.2.3 Detailed Analysis"
-  if (/^\d+\.\d+(\.\d+)?\s/.test(t)) return true;
-  // Pattern: "Figure 1:" or "Table 1:" or "Appendix A:"
-  if (/^(Figure|Table|Appendix)\s+[A-Z0-9]/i.test(t)) return false;
-  // Short numbered lines that look like headings
-  if (/^\d+\.\s+[A-Z]/.test(t) && t.length < 100) return true;
-  return false;
-}
-
-function isHeading3(line: string): boolean {
-  const t = line.trim();
-  if (t.length < 3 || t.length > 200) return false;
-  // Pattern: "5.2.1 Sub Topic"
-  if (/^\d+\.\d+\.\d+\s/.test(t)) return true;
-  return false;
-}
-
-function isTableHeader(line: string): boolean {
-  const t = line.trim();
-  // Tables with | separators or tab-separated data
-  return t.includes("|") && t.split("|").length > 2;
-}
-
-function isBulletPoint(line: string): boolean {
-  const t = line.trim();
-  return /^[-•·▪◦●○■□]\s/.test(t) || /^[a-z]\)\s/.test(t);
-}
-
-function isNumberedList(line: string): boolean {
-  const t = line.trim();
-  return /^\d+[\.)]\s/.test(t) && !isHeading2(t);
-}
-
-function isReferenceEntry(line: string): boolean {
-  const t = line.trim();
-  // Reference entries typically have (Year) pattern and are longer
-  return /\(\d{4}\)/.test(t) && t.length > 40;
-}
-
-function parseTable(line: string): { headers: string[]; rows: string[][] } | null {
-  const t = line.trim();
-  if (!t.includes("|")) return null;
-  
-  const cells = t.split("|").map(c => c.trim()).filter(c => c);
-  // If it looks like a header row (bold-ish or title case)
-  if (cells.every(c => c.length > 0)) {
-    return { headers: cells, rows: [] };
-  }
+  if (t.length < 3 || t.length > 120) return null;
+  if (CHAPTER_HEADING.test(t)) return 1;
+  if (ALL_CAPS_HEADING.test(t) && t.length > 5 && t.length < 100) return 1;
+  if (/^\d+\.\d+\.\d+\s/.test(t)) return 3;
+  if (/^\d+\.\d+\s/.test(t)) return 2;
+  if (/^\d+\.\s+[A-Z]/.test(t) && t.length < 100) return 2;
   return null;
 }
 
-function createTextRuns(text: string, size = BODY_SIZE, bold = false, italic = false, underline = false): TextRun[] {
-  const runs: TextRun[] = [];
-  // Simple inline formatting: **bold**, *italic*, _underline_
-  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|_[^_]+_)/g);
-  
-  for (const part of parts) {
-    if (part.startsWith("**") && part.endsWith("**")) {
-      runs.push(new TextRun({ text: part.slice(2, -2), font: FONT, size, bold: true, italics: italic, underline: underline ? { type: UnderlineType.SINGLE } : undefined }));
-    } else if (part.startsWith("*") && part.endsWith("*")) {
-      runs.push(new TextRun({ text: part.slice(1, -1), font: FONT, size, bold, italics: true, underline: underline ? { type: UnderlineType.SINGLE } : undefined }));
-    } else if (part.startsWith("_") && part.endsWith("_")) {
-      runs.push(new TextRun({ text: part.slice(1, -1), font: FONT, size, bold, italics: italic, underline: { type: UnderlineType.SINGLE } }));
-    } else if (part) {
-      runs.push(new TextRun({ text: part, font: FONT, size, bold, italics: italic, underline: underline ? { type: UnderlineType.SINGLE } : undefined }));
-    }
-  }
-  
-  return runs.length > 0 ? runs : [new TextRun({ text, font: FONT, size, bold, italics: italic, underline: underline ? { type: UnderlineType.SINGLE } : undefined })];
+function isBulletPoint(line: string): boolean {
+  return /^[-•·▪◦●○■□]\s/.test(line.trim());
 }
 
-function buildParagraphs(text: string): Paragraph[] {
+function isReferenceEntry(line: string): boolean {
+  return /\(\d{4}\)/.test(line.trim()) && line.trim().length > 40;
+}
+
+function isTableLine(line: string): boolean {
+  const t = line.trim();
+  return t.includes("|") && t.split("|").length > 2;
+}
+
+// ─── Inline formatting parser ───────────────────────────────────────────────
+
+function createRuns(text: string, size = BODY_SIZE, bold = false, italic = false): TextRun[] {
+  const runs: TextRun[] = [];
+  // Handle **bold**, *italic*, _underline_
+  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|_[^_]+_)/g);
+  for (const part of parts) {
+    if (!part) continue;
+    if (part.startsWith("**") && part.endsWith("**")) {
+      runs.push(new TextRun({ text: part.slice(2, -2), font: FONT, size, bold: true, italics: italic }));
+    } else if (part.startsWith("*") && part.endsWith("*")) {
+      runs.push(new TextRun({ text: part.slice(1, -1), font: FONT, size, bold, italics: true }));
+    } else if (part.startsWith("_") && part.endsWith("_")) {
+      runs.push(new TextRun({ text: part.slice(1, -1), font: FONT, size, bold, italics: italic, underline: { type: UnderlineType.SINGLE } }));
+    } else {
+      runs.push(new TextRun({ text: part, font: FONT, size, bold, italics: italic }));
+    }
+  }
+  return runs.length > 0 ? runs : [new TextRun({ text, font: FONT, size, bold, italics: italic })];
+}
+
+// ─── Build paragraphs from blocks (original document structure) ─────────────
+
+function buildFromBlocks(rewrittenText: string, blocks: Array<{ type: string; text: string; level?: number }>): Paragraph[] {
+  // Split rewritten text into paragraphs to get the rewritten text per block
+  const rewrittenParas = rewrittenText.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+  const paragraphs: Paragraph[] = [];
+  
+  // Map blocks to rewritten paragraphs
+  // Strategy: match by position — first N blocks map to first N paragraphs
+  let textIdx = 0;
+
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i];
+    // Get corresponding rewritten paragraph
+    let rewritten = textIdx < rewrittenParas.length ? rewrittenParas[textIdx] : block.text;
+    textIdx++;
+
+    if (block.type === "heading") {
+      const level = block.level || 1;
+      let headingLevel: number;
+      let fontSize: number;
+      if (level === 1) {
+        headingLevel = HeadingLevel.HEADING_1;
+        fontSize = HEADING1_SIZE;
+      } else if (level === 2) {
+        headingLevel = HeadingLevel.HEADING_2;
+        fontSize = HEADING2_SIZE;
+      } else {
+        headingLevel = HeadingLevel.HEADING_3;
+        fontSize = HEADING3_SIZE;
+      }
+
+      paragraphs.push(new Paragraph({
+        heading: headingLevel,
+        spacing: {
+          before: level === 1 ? 480 : level === 2 ? 280 : 240,
+          after: level === 1 ? 240 : level === 2 ? 160 : 120,
+        },
+        children: [new TextRun({ text: rewritten, font: FONT, size: fontSize, bold: true, italics: level >= 3 })],
+      }));
+    } else if (block.type === "list-item") {
+      paragraphs.push(new Paragraph({
+        bullet: { level: 0 },
+        spacing: { after: 60 },
+        indent: { left: HALF_INCH, hanging: HALF_INCH / 2 },
+        children: createRuns(rewritten, BODY_SIZE),
+      }));
+    } else if (block.type === "blockquote") {
+      paragraphs.push(new Paragraph({
+        indent: { left: INCH },
+        spacing: { after: 120 },
+        children: createRuns(rewritten, BODY_SIZE, false, true),
+      }));
+    } else {
+      // Regular paragraph
+      paragraphs.push(new Paragraph({
+        spacing: {
+          after: 120,
+          line: 360,
+        },
+        indent: { firstLine: HALF_INCH },
+        children: createRuns(rewritten, BODY_SIZE),
+      }));
+    }
+  }
+
+  return paragraphs;
+}
+
+// ─── Build paragraphs from plain text (detection fallback) ──────────────────
+
+function buildFromText(text: string): Paragraph[] {
   const lines = text.split("\n");
   const paragraphs: Paragraph[] = [];
   let inReferences = false;
-  let inTable = false;
   let tableRows: string[][] = [];
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+  for (const line of lines) {
     const trimmed = line.trim();
-    
-    // Skip empty lines
     if (!trimmed) {
-      if (inTable && tableRows.length > 0) {
-        // Flush table
-        paragraphs.push(...buildTableFromRows(tableRows));
+      if (tableRows.length > 0) {
+        paragraphs.push(...buildTable(tableRows));
         tableRows = [];
-        inTable = false;
       }
       continue;
     }
 
-    // Detect references section
+    // References section
     if (/^REFERENCES?\s*$/i.test(trimmed)) {
       inReferences = true;
       paragraphs.push(new Paragraph({
         heading: HeadingLevel.HEADING_1,
-        spacing: { before: 360, after: 200 },
+        spacing: { before: 480, after: 240 },
         children: [new TextRun({ text: "REFERENCES", font: FONT, size: HEADING1_SIZE, bold: true })],
       }));
       continue;
     }
 
-    // Chapter headings (CHAPTER 1, CHAPTER 2, etc.)
+    // Chapter headings
     if (CHAPTER_HEADING.test(trimmed)) {
       paragraphs.push(new Paragraph({
         heading: HeadingLevel.HEADING_1,
@@ -148,125 +173,96 @@ function buildParagraphs(text: string): Paragraph[] {
       continue;
     }
 
-    // Heading level 1 — ALL CAPS lines
-    if (isHeading1(trimmed) && !CHAPTER_HEADING.test(trimmed)) {
+    // Detected heading levels
+    const hlvl = detectHeadingLevel(trimmed);
+    if (hlvl) {
       paragraphs.push(new Paragraph({
-        spacing: { before: 360, after: 200 },
-        children: [new TextRun({ text: trimmed, font: FONT, size: HEADING1_SIZE, bold: true })],
+        heading: hlvl === 1 ? HeadingLevel.HEADING_1 : hlvl === 2 ? HeadingLevel.HEADING_2 : HeadingLevel.HEADING_3,
+        spacing: { before: hlvl === 1 ? 480 : hlvl === 2 ? 280 : 240, after: hlvl === 1 ? 240 : hlvl === 2 ? 160 : 120 },
+        children: [new TextRun({
+          text: trimmed,
+          font: FONT,
+          size: hlvl === 1 ? HEADING1_SIZE : hlvl === 2 ? HEADING2_SIZE : HEADING3_SIZE,
+          bold: true,
+          italics: hlvl >= 3,
+        })],
       }));
       continue;
     }
 
-    // Heading level 2 — numbered headings like "5.1 Introduction"
-    if (isHeading2(trimmed)) {
-      paragraphs.push(new Paragraph({
-        spacing: { before: 280, after: 160 },
-        children: [new TextRun({ text: trimmed, font: FONT, size: HEADING2_SIZE, bold: true })],
-      }));
-      continue;
-    }
-
-    // Heading level 3 — deeper numbered headings
-    if (isHeading3(trimmed)) {
-      paragraphs.push(new Paragraph({
-        spacing: { before: 240, after: 120 },
-        children: [new TextRun({ text: trimmed, font: FONT, size: HEADING3_SIZE, bold: true, italics: true })],
-      }));
-      continue;
-    }
-
-    // Table detection
-    if (isTableHeader(trimmed)) {
-      inTable = true;
+    // Tables
+    if (isTableLine(trimmed)) {
       const cells = trimmed.split("|").map(c => c.trim()).filter(c => c);
       tableRows.push(cells);
       continue;
     }
-
-    if (inTable) {
-      if (trimmed.includes("|")) {
-        const cells = trimmed.split("|").map(c => c.trim()).filter(c => c);
-        tableRows.push(cells);
-        continue;
-      } else {
-        // End of table
-        paragraphs.push(...buildTableFromRows(tableRows));
-        tableRows = [];
-        inTable = false;
-        // Fall through to process this line normally
-      }
+    if (tableRows.length > 0) {
+      paragraphs.push(...buildTable(tableRows));
+      tableRows = [];
     }
 
-    // Bullet points
+    // Bullets
     if (isBulletPoint(trimmed)) {
-      const content = trimmed.replace(/^[-•·▪◦●○■□]\s*/, "").replace(/^[a-z]\)\s*/, "");
+      const content = trimmed.replace(/^[-•·▪◦●○■□]\s*/, "");
       paragraphs.push(new Paragraph({
         bullet: { level: 0 },
         spacing: { after: 60 },
         indent: { left: HALF_INCH, hanging: HALF_INCH / 2 },
-        children: createTextRuns(content, BODY_SIZE),
+        children: createRuns(content, BODY_SIZE),
       }));
       continue;
     }
 
-    // Numbered list
-    if (isNumberedList(trimmed) && !inReferences) {
-      const match = trimmed.match(/^(\d+)[\.)]\s+(.*)/);
-      if (match) {
-        paragraphs.push(new Paragraph({
-          spacing: { after: 60 },
-          indent: { left: HALF_INCH, hanging: HALF_INCH / 2 },
-          children: createTextRuns(match[2], BODY_SIZE),
-        }));
-        continue;
-      }
-    }
-
-    // Reference entries — hanging indent style
+    // References (hanging indent)
     if (inReferences && isReferenceEntry(trimmed)) {
       paragraphs.push(new Paragraph({
         spacing: { after: 120 },
         indent: { left: HALF_INCH, hanging: HALF_INCH },
-        children: createTextRuns(trimmed, BODY_SIZE),
+        children: createRuns(trimmed, BODY_SIZE),
       }));
       continue;
     }
 
-    // Regular body paragraph — first line indent
+    // Regular paragraph
     paragraphs.push(new Paragraph({
-      spacing: {
-        after: 120,
-        line: 360, // 1.5 line spacing (240 = single, 480 = double)
-      },
+      spacing: { after: 120, line: 360 },
       indent: { firstLine: HALF_INCH },
-      children: createTextRuns(trimmed, BODY_SIZE),
+      children: createRuns(trimmed, BODY_SIZE),
     }));
   }
 
-  // Flush remaining table
-  if (inTable && tableRows.length > 0) {
-    paragraphs.push(...buildTableFromRows(tableRows));
+  if (tableRows.length > 0) {
+    paragraphs.push(...buildTable(tableRows));
   }
 
   return paragraphs;
 }
 
-function buildTableFromRows(rows: string[][]): Paragraph[] {
+// ─── Table builder ──────────────────────────────────────────────────────────
+
+function buildTable(rows: string[][]): Paragraph[] {
   if (rows.length === 0) return [];
-  
+
   const table = new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
-    rows: rows.map((row, rowIndex) => new TableRow({
+    rows: rows.map((row, ri) => new TableRow({
       children: row.map(cell => new TableCell({
         width: { size: Math.floor(100 / row.length), type: WidthType.PERCENTAGE },
-        shading: rowIndex === 0 ? { type: ShadingType.SOLID, color: "2B5797" } : undefined,
+        shading: ri === 0 ? { type: ShadingType.SOLID, color: "2B5797" } : undefined,
+        borders: {
+          top: { style: BorderStyle.SINGLE, size: 1, color: "CCCCCC" },
+          bottom: { style: BorderStyle.SINGLE, size: 1, color: "CCCCCC" },
+          left: { style: BorderStyle.SINGLE, size: 1, color: "CCCCCC" },
+          right: { style: BorderStyle.SINGLE, size: 1, color: "CCCCCC" },
+        },
         children: [new Paragraph({
+          spacing: { before: 40, after: 40 },
           children: [new TextRun({
             text: cell,
             font: FONT,
-            size: BODY_SIZE - 2, // 11pt for tables
-            bold: rowIndex === 0,
-            color: rowIndex === 0 ? "FFFFFF" : "000000",
+            size: TABLE_SIZE,
+            bold: ri === 0,
+            color: ri === 0 ? "FFFFFF" : "000000",
           })],
         })],
       })),
@@ -276,6 +272,8 @@ function buildTableFromRows(rows: string[][]): Paragraph[] {
   return [table as unknown as Paragraph];
 }
 
+// ─── Page footer with page numbers ──────────────────────────────────────────
+
 function createFooter(): Footer {
   return new Footer({
     children: [
@@ -283,45 +281,48 @@ function createFooter(): Footer {
         alignment: AlignmentType.CENTER,
         spacing: { before: 240 },
         children: [
-          new TextRun({ text: "Page ", font: FONT, size: 20 }),
-          new TextRun({ children: [PageNumber.CURRENT], font: FONT, size: 20 }),
+          new TextRun({ text: "Page ", font: FONT, size: 20, color: "666666" }),
+          new TextRun({ children: [PageNumber.CURRENT], font: FONT, size: 20, color: "666666" }),
         ],
       }),
     ],
   });
 }
 
+// ─── Main handler ───────────────────────────────────────────────────────────
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { text, format, fileName } = body;
+    const { text, format, fileName, blocks = [] } = body;
 
     if (!text) {
       return NextResponse.json({ error: "Missing text" }, { status: 400 });
     }
 
     if (format === "docx") {
-      const docParagraphs = buildParagraphs(text);
+      // Use blocks if available (from original .docx), otherwise detect from text
+      const docParagraphs = blocks.length > 0
+        ? buildFromBlocks(text, blocks)
+        : buildFromText(text);
 
       const doc = new Document({
         styles: {
           default: {
             document: {
               run: { font: FONT, size: BODY_SIZE },
-              paragraph: {
-                spacing: { line: 360 },
-              },
+              paragraph: { spacing: { line: 360 } },
             },
             heading1: {
-              run: { font: FONT, size: HEADING1_SIZE, bold: true },
-              paragraph: { spacing: { before: 360, after: 200 } },
+              run: { font: FONT, size: HEADING1_SIZE, bold: true, color: "1A1A1A" },
+              paragraph: { spacing: { before: 480, after: 240 } },
             },
             heading2: {
-              run: { font: FONT, size: HEADING2_SIZE, bold: true },
+              run: { font: FONT, size: HEADING2_SIZE, bold: true, color: "1A1A1A" },
               paragraph: { spacing: { before: 280, after: 160 } },
             },
             heading3: {
-              run: { font: FONT, size: HEADING3_SIZE, bold: true, italics: true },
+              run: { font: FONT, size: HEADING3_SIZE, bold: true, italics: true, color: "1A1A1A" },
               paragraph: { spacing: { before: 240, after: 120 } },
             },
           },
@@ -329,18 +330,11 @@ export async function POST(request: NextRequest) {
         sections: [{
           properties: {
             page: {
-              size: { width: 12240, height: 15840 }, // US Letter
-              margin: {
-                top: INCH,
-                right: INCH,
-                bottom: INCH,
-                left: INCH,
-              },
+              size: { width: 12240, height: 15840 },
+              margin: { top: INCH, right: INCH, bottom: INCH, left: INCH },
             },
           },
-          footers: {
-            default: createFooter(),
-          },
+          footers: { default: createFooter() },
           children: docParagraphs,
         }],
       });
@@ -356,7 +350,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Default: txt download
+    // Plain text download
     const baseName = fileName || "document";
     return new NextResponse(text, {
       headers: {
