@@ -308,6 +308,26 @@ export async function POST(request: NextRequest) {
     }
 
     if (format === "docx") {
+      // V2 pipeline — structure-preserving rewrite using original XML
+      const { docxJobId, docxV2 } = body;
+      if (docxV2 && docxJobId) {
+        const { getDocxBuffer, renderDocx, processDocument } = await import("@/lib/docx");
+        const stored = getDocxBuffer(docxJobId);
+        if (stored) {
+          const { ast } = stored as { ast: import("@/lib/docx").DocxDocument; buffer: Buffer };
+          const rewritten = await processDocument(ast);
+          const buffer = await renderDocx(rewritten);
+          const baseName = fileName || "document";
+          return new NextResponse(new Uint8Array(buffer), {
+            headers: {
+              "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+              "Content-Disposition": `attachment; filename="${baseName}"`,
+            },
+          });
+        }
+      }
+
+      // V1 pipeline — fallback (existing logic)
       // Use blocks if available (from original .docx), otherwise detect from text
       const docParagraphs = blocks.length > 0
         ? buildFromBlocks(text, blocks)

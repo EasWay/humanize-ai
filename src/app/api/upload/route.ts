@@ -151,6 +151,8 @@ async function extractDocxStructure(buffer: Buffer) {
   };
 }
 
+import { storeDocxBuffer } from "@/lib/docx/buffer-store";
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
@@ -197,7 +199,35 @@ export async function POST(request: NextRequest) {
     } else if (fileName.endsWith(".docx")) {
       format = "docx";
       const buffer = Buffer.from(await file.arrayBuffer());
+
+      // V1 pipeline (mammoth — backward compatible)
       structure = await extractDocxStructure(buffer);
+
+      // V2 pipeline — parse XML AST for structure-preserving rewriting
+      try {
+        const { parseDocx } = await import("@/lib/docx");
+        const ast = await parseDocx(buffer);
+        const jobId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+        storeDocxBuffer(jobId, buffer, ast);
+
+        // Include v2 metadata in response
+        return NextResponse.json({
+          text: structure.plainText.trim(),
+          blocks: structure.blocks,
+          format,
+          fileName: file.name,
+          fileSize,
+          charCount: structure.plainText.length,
+          wordCount: structure.plainText.split(/\s+/).filter((w: string) => w.length > 0).length,
+          docxV2: true,
+          docxJobId: jobId,
+          docxBlockCount: ast.paragraphs.length,
+          docxTableCount: ast.tables.length,
+        });
+      } catch (e) {
+        console.error("V2 parser failed, falling back to v1:", e);
+        // Fall through to standard response below
+      }
     } else {
       return NextResponse.json(
         { error: "Unsupported file type. Use .txt, .pdf, or .docx" },
