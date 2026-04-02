@@ -84,7 +84,7 @@ function buildFromBlocks(rewrittenText: string, blocks: Array<{ type: string; te
 
     if (block.type === "heading") {
       const level = block.level || 1;
-      let headingLevel: number;
+      let headingLevel: (typeof HeadingLevel)[keyof typeof HeadingLevel];
       let fontSize: number;
       if (level === 1) {
         headingLevel = HeadingLevel.HEADING_1;
