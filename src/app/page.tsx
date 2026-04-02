@@ -16,7 +16,7 @@ interface JobStatus {
 
 export default function Home() {
   const [input, setInput] = useState("");
-  const [blocks, setBlocks] = useState<Array<{ type: string; text: string; level?: number }>>([]);
+  const [blocks, setBlocks] = useState<Array<Record<string, unknown>>>([]);
   const [fileName, setFileName] = useState("");
   const [fileFormat, setFileFormat] = useState("txt");
   const [uploading, setUploading] = useState(false);

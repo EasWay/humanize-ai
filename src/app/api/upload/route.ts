@@ -21,6 +21,38 @@ function decodeHtmlEntities(str: string): string {
   return result;
 }
 
+// Strip HTML tags and decode entities
+function stripHtml(html: string): string {
+  return decodeHtmlEntities(
+    html
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/?[^>]+>/g, "")
+  ).replace(/\s+/g, " ").trim();
+}
+
+// Parse a single HTML table into rows of cells
+function parseTable(tableHtml: string): string[][] {
+  const rows: string[][] = [];
+  const trRegex = /<tr(?:\s[^>]*)?>([\s\S]*?)<\/tr>/gi;
+  let trMatch;
+
+  while ((trMatch = trRegex.exec(tableHtml)) !== null) {
+    const rowHtml = trMatch[1];
+    const cells: string[] = [];
+    const cellRegex = /<(td|th)(?:\s[^>]*)?>([\s\S]*?)<\/\1>/gi;
+    let cellMatch;
+
+    while ((cellMatch = cellRegex.exec(rowHtml)) !== null) {
+      const text = stripHtml(cellMatch[2]);
+      if (text) cells.push(text);
+    }
+
+    if (cells.length > 0) rows.push(cells);
+  }
+
+  return rows;
+}
+
 // Extract structured content from .docx via mammoth HTML output
 async function extractDocxStructure(buffer: Buffer) {
   const mammoth = await import("mammoth");
@@ -33,42 +65,73 @@ async function extractDocxStructure(buffer: Buffer) {
   // Get plain text as fallback
   const textResult = await mammoth.extractRawText({ buffer });
 
-  // Parse HTML to extract paragraphs with their types
   const html = htmlResult.value;
-  const blocks: Array<{
-    type: string;
-    text: string;
-    level?: number;
-  }> = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const blocks: Array<Record<string, any>> = [];
 
-  // Parse HTML blocks: h1-h6, p, table rows, li, etc.
-  const blockRegex = /<(h[1-6]|p|table|tr|td|th|li|ol|ul|blockquote)(?:\s[^>]*)?>([\s\S]*?)<\/\1>/gi;
+  // First, extract and replace tables with placeholders so we process them as units
+  const tableRegex = /<table(?:\s[^>]*)?>([\s\S]*?)<\/table>/gi;
+  let processedHtml = html;
+  const tables: string[][][] = [];
+
+  processedHtml = html.replace(tableRegex, (_match, tableContent) => {
+    const rows = parseTable(`<table>${tableContent}</table>`);
+    if (rows.length > 0) {
+      const idx = tables.length;
+      tables.push(rows);
+      return `\n%%TABLE_${idx}%%\n`;
+    }
+    return "";
+  });
+
+  // Now parse the remaining HTML blocks (headings, paragraphs, lists, etc.)
+  const blockRegex = /<(h[1-6]|p|li|blockquote)(?:\s[^>]*)?>([\s\S]*?)<\/\1>/gi;
   let match;
+  let lastIndex = 0;
+  const rawParts: Array<{ index: number; type: string; text: string; level?: number }> = [];
 
-  while ((match = blockRegex.exec(html)) !== null) {
+  while ((match = blockRegex.exec(processedHtml)) !== null) {
+    // Check for table placeholders before this block
+    const between = processedHtml.slice(lastIndex, match.index);
+    const tableMatch = between.match(/%%TABLE_(\d+)%%/);
+    if (tableMatch) {
+      rawParts.push({ index: match.index - 1, type: "__table__", text: tableMatch[1] });
+    }
+
     const tag = match[1].toLowerCase();
-    const innerHtml = match[2];
-
-    // Strip HTML tags and decode entities
-    const text = decodeHtmlEntities(
-      innerHtml
-        .replace(/<br\s*\/?>/gi, "\n")
-        .replace(/<\/?[^>]+>/g, "")
-    ).replace(/\s+/g, " ").trim();
-
-    if (!text) continue;
+    const text = stripHtml(match[2]);
+    if (!text) { lastIndex = match.index + match[0].length; continue; }
 
     if (tag.match(/^h[1-6]$/)) {
-      const level = parseInt(tag[1]);
-      blocks.push({ type: "heading", text, level });
-    } else if (tag === "table" || tag === "tr" || tag === "td" || tag === "th") {
-      blocks.push({ type: "table-cell", text });
+      rawParts.push({ index: match.index, type: "heading", text, level: parseInt(tag[1]) });
     } else if (tag === "li") {
-      blocks.push({ type: "list-item", text });
+      rawParts.push({ index: match.index, type: "list-item", text });
     } else if (tag === "blockquote") {
-      blocks.push({ type: "blockquote", text });
+      rawParts.push({ index: match.index, type: "blockquote", text });
     } else {
-      blocks.push({ type: "paragraph", text });
+      rawParts.push({ index: match.index, type: "paragraph", text });
+    }
+
+    lastIndex = match.index + match[0].length;
+  }
+
+  // Check for trailing table placeholder
+  const trailing = processedHtml.slice(lastIndex);
+  const trailingTable = trailing.match(/%%TABLE_(\d+)%%/);
+  if (trailingTable) {
+    rawParts.push({ index: lastIndex, type: "__table__", text: trailingTable[1] });
+  }
+
+  // Build final blocks list in order
+  rawParts.sort((a, b) => a.index - b.index);
+  for (const part of rawParts) {
+    if (part.type === "__table__") {
+      const tableIdx = parseInt(part.text);
+      if (tables[tableIdx]) {
+        blocks.push({ type: "table", rows: tables[tableIdx] });
+      }
+    } else {
+      blocks.push({ type: part.type, text: part.text, ...(part.level ? { level: part.level } : {}) });
     }
   }
 
@@ -101,7 +164,8 @@ export async function POST(request: NextRequest) {
     const fileSize = file.size;
     let format: "txt" | "pdf" | "docx" = "txt";
     let structure: {
-      blocks: Array<{ type: string; text: string; level?: number }>;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      blocks: Array<Record<string, any>>;
       plainText: string;
       html: string;
       warnings: unknown[];

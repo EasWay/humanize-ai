@@ -67,7 +67,8 @@ function createRuns(text: string, size = BODY_SIZE, bold = false, italic = false
 
 // ─── Build paragraphs from blocks (original document structure) ─────────────
 
-function buildFromBlocks(rewrittenText: string, blocks: Array<{ type: string; text: string; level?: number }>): Paragraph[] {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function buildFromBlocks(rewrittenText: string, blocks: Array<any>): Paragraph[] {
   // Split rewritten text into paragraphs to get the rewritten text per block
   const rewrittenParas = rewrittenText.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
   const paragraphs: Paragraph[] = [];
@@ -80,9 +81,9 @@ function buildFromBlocks(rewrittenText: string, blocks: Array<{ type: string; te
     const block = blocks[i];
     // Get corresponding rewritten paragraph
     let rewritten = textIdx < rewrittenParas.length ? rewrittenParas[textIdx] : block.text;
-    textIdx++;
 
     if (block.type === "heading") {
+      textIdx++;
       const level = block.level || 1;
       let headingLevel: (typeof HeadingLevel)[keyof typeof HeadingLevel];
       let fontSize: number;
@@ -105,7 +106,11 @@ function buildFromBlocks(rewrittenText: string, blocks: Array<{ type: string; te
         },
         children: [new TextRun({ text: rewritten, font: FONT, size: fontSize, bold: true, italics: level >= 3 })],
       }));
+    } else if (block.type === "table" && Array.isArray(block.rows)) {
+      // Structured table — render directly, not through rewritten text
+      paragraphs.push(...buildTable(block.rows));
     } else if (block.type === "list-item") {
+      textIdx++;
       paragraphs.push(new Paragraph({
         bullet: { level: 0 },
         spacing: { after: 60 },
@@ -113,6 +118,7 @@ function buildFromBlocks(rewrittenText: string, blocks: Array<{ type: string; te
         children: createRuns(rewritten, BODY_SIZE),
       }));
     } else if (block.type === "blockquote") {
+      textIdx++;
       paragraphs.push(new Paragraph({
         indent: { left: INCH },
         spacing: { after: 120 },
@@ -120,6 +126,7 @@ function buildFromBlocks(rewrittenText: string, blocks: Array<{ type: string; te
       }));
     } else {
       // Regular paragraph
+      textIdx++;
       paragraphs.push(new Paragraph({
         spacing: {
           after: 120,
