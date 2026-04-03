@@ -66,7 +66,12 @@ export async function renderDocx(doc: DocxDocument): Promise<Buffer> {
 
   // 4. Serialize back to XML (preserves all namespaces, order, and self-closing tags)
   const serializer = new XMLSerializer();
-  const newDocumentXml = serializer.serializeToString(xmlDoc);
+  let newDocumentXml = serializer.serializeToString(xmlDoc);
+
+  // CRUCIAL FIX: Ensure MS Word's required XML prologue is present
+  if (!newDocumentXml.trim().startsWith("<?xml")) {
+    newDocumentXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' + newDocumentXml;
+  }
 
   // 5. Repackage into a new buffer
   doc.files.set("word/document.xml", newDocumentXml);
