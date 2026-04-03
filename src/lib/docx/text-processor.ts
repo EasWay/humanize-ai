@@ -60,34 +60,26 @@ function applyRewrites(doc: DocxDocument, blocks: TextBlock[], results: RewriteR
     const para = doc.paragraphs[block.paragraphIdx];
     if (!para || para.runs.length === 0) continue;
 
-    // Split the rewritten text back across the original runs
-    // Strategy: proportional distribution
     const originalTotal = para.runs.reduce((sum, r) => sum + r.originalText.length, 0);
     if (originalTotal === 0) continue;
 
-    const rewrittenText = result.rewritten;
+    // FIX: Safely convert to array to prevent splitting surrogate pairs (emojis, symbols)
+    const rewrittenArray = Array.from(result.rewritten);
     let charIdx = 0;
 
     for (let ri = 0; ri < para.runs.length; ri++) {
       const run = para.runs[ri];
       const proportion = run.originalText.length / originalTotal;
-      let charsToTake = Math.round(rewrittenText.length * proportion);
+      let charsToTake = Math.round(rewrittenArray.length * proportion);
 
-      // Last run gets the remainder
       if (ri === para.runs.length - 1) {
-        charsToTake = rewrittenText.length - charIdx;
+        charsToTake = rewrittenArray.length - charIdx;
       }
 
-      run.rewrittenText = rewrittenText.slice(charIdx, charIdx + charsToTake);
+      // Re-join the array slice to guarantee valid UTF strings
+      run.rewrittenText = rewrittenArray.slice(charIdx, charIdx + charsToTake).join('');
       run.text = run.rewrittenText;
       charIdx += charsToTake;
-    }
-
-    // Handle rounding errors — pad or trim last run
-    if (charIdx < rewrittenText.length) {
-      const lastRun = para.runs[para.runs.length - 1];
-      lastRun.rewrittenText = (lastRun.rewrittenText || "") + rewrittenText.slice(charIdx);
-      lastRun.text = lastRun.rewrittenText;
     }
   }
 }

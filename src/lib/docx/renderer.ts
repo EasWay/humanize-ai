@@ -1,134 +1,82 @@
-// Renderer — Surgical DOM-Patching approach for perfect DOCX preservation
+// Renderer — Rebuild .docx via surgical DOM patching (100% Lossless)
 import JSZip from "jszip";
-import { DOMParser } from "@xmldom/xmldom";
+import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
 import type { DocxDocument } from "./types";
 
-const W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
-
 export async function renderDocx(doc: DocxDocument): Promise<Buffer> {
-  // Parse the document XML as a standard DOM
+  // 1. Use standard DOM to avoid JSON tag-reordering corruption
   const parser = new DOMParser();
-  const docXml = parser.parseFromString(doc.documentXml, "application/xml");
-  
-  // Build replacement map: originalText -> rewrittenText for ALL runs
-  const replacementMap = new Map<string, string>();
+  const xmlDoc = parser.parseFromString(doc.documentXml, "text/xml");
+
+  // 2. Build a strict replacement queue based on the parser's output
+  // We use a queue to handle multiple identical strings appearing sequentially
+  const replacementQueue = new Map<string, string[]>();
   for (const para of doc.paragraphs) {
     for (const run of para.runs) {
       if (run.rewrittenText !== null && run.rewrittenText !== run.originalText && run.originalText) {
-        replacementMap.set(run.originalText, run.rewrittenText);
+        if (!replacementQueue.has(run.originalText)) {
+          replacementQueue.set(run.originalText, []);
+        }
+        replacementQueue.get(run.originalText)!.push(run.rewrittenText);
       }
     }
   }
 
-  // Only proceed if there are changes
-  if (replacementMap.size === 0) {
-    // No changes — just repackage original
-    return repackageZip(doc.files);
-  }
+  if (replacementQueue.size === 0) return repackageZip(doc.files);
 
-  // Find all <w:r> (run) elements and process them
-  const runs = docXml.getElementsByTagNameNS(W_NS, "r");
-  
-  for (let i = 0; i < runs.length; i++) {
-    const run = runs[i];
+  // 3. Traverse <w:r> (Run) elements to perfectly match parser logic
+  const runNodes = xmlDoc.getElementsByTagName("w:r");
+  for (let i = 0; i < runNodes.length; i++) {
+    const rNode = runNodes[i];
     
-    // Get all text nodes (w:t) in this run
-    const textNodes = run.getElementsByTagNameNS(W_NS, "t");
-    
-    // Consolidate fragmented text: "Hel" + "lo" -> "Hello"
-    let consolidatedText = "";
-    for (let j = 0; j < textNodes.length; j++) {
-      consolidatedText += textNodes[j].textContent || "";
+    // Find all <w:t> (Text) children of this specific run
+    const tNodes: Element[] = [];
+    for (let j = 0; j < rNode.childNodes.length; j++) {
+      const child = rNode.childNodes[j] as unknown as Element;
+      if (child && child.tagName === "w:t") {
+        tNodes.push(child);
+      }
     }
-    
-    // Check if this consolidated text has a replacement
-    if (replacementMap.has(consolidatedText)) {
-      const newText = replacementMap.get(consolidatedText)!;
-      
-      // Replace all text nodes in this run with the new text
-      // This preserves formatting (bold, italic, etc.) from the run properties
-      for (let j = 0; j < textNodes.length; j++) {
-        textNodes[j].textContent = newText;
+
+    if (tNodes.length === 0) continue;
+
+    // Reconstruct the fragmented text exactly as parser.ts did
+    let combinedText = "";
+    for (const tNode of tNodes) {
+      combinedText += tNode.textContent || "";
+    }
+
+    // Check if we have an AI rewrite for this exact combined fragment
+    if (combinedText && replacementQueue.has(combinedText)) {
+      const queue = replacementQueue.get(combinedText)!;
+      if (queue.length > 0) {
+        const rewrittenText = queue.shift()!;
+        
+        // RUN CONSOLIDATION: Put all rewritten text into the first <w:t> node.
+        // xmldom automatically escapes &, <, > to prevent XML corruption.
+        tNodes[0].textContent = rewrittenText;
+        
+        // Clear subsequent fragments to un-fragment the word safely
+        for (let k = 1; k < tNodes.length; k++) {
+          tNodes[k].textContent = ""; 
+        }
       }
     }
   }
 
-  // Serialize back to XML
+  // 4. Serialize back to XML (preserves all namespaces, order, and self-closing tags)
   const serializer = new XMLSerializer();
-  const docElement = docXml.documentElement;
-  if (!docElement) throw new Error("Failed to serialize document");
-  // Use type assertion for xmldom compatibility
-  const newDocumentXml = serializer.serializeToString(docElement as unknown as Document | Element);
+  const newDocumentXml = serializer.serializeToString(xmlDoc);
 
-  // Create new zip with modified document.xml
-  const zip = new JSZip();
-  for (const [path, content] of doc.files) {
-    if (path === "word/document.xml") {
-      zip.file(path, newDocumentXml);
-    } else if (typeof content === "string") {
-      zip.file(path, content);
-    } else {
-      zip.file(path, content);
-    }
-  }
-
-  return await zip.generateAsync({ type: "nodebuffer" });
+  // 5. Repackage into a new buffer
+  doc.files.set("word/document.xml", newDocumentXml);
+  return repackageZip(doc.files);
 }
 
-// Simple serializer fallback
-class XMLSerializer {
-  serializeToString(node: Document | Element): string {
-    let xml = "";
-    
-    if (node.nodeType === 1) { // Element node
-      const el = node as Element;
-      xml += "<" + el.tagName;
-      
-      // Serialize attributes
-      if (el.attributes) {
-        for (let i = 0; i < el.attributes.length; i++) {
-          const attr = el.attributes[i];
-          xml += ` ${attr.name}="${this.escapeXml(attr.value)}"`;
-        }
-      }
-      
-      // Serialize children
-      if (el.childNodes.length > 0) {
-        xml += ">";
-        for (let i = 0; i < el.childNodes.length; i++) {
-          xml += this.serializeToString(el.childNodes[i] as Element);
-        }
-        xml += "</" + el.tagName + ">";
-      } else {
-        xml += "/>";
-      }
-    } else if (node.nodeType === 3) { // Text node
-      xml += this.escapeXml(node.textContent || "");
-    } else if (node.nodeType === 8) { // Comment
-      xml += "<!--" + node.textContent + "-->";
-    }
-    
-    return xml;
-  }
-  
-  escapeXml(str: string): string {
-    return str
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&apos;");
-  }
-}
-
-function repackageZip(files: Map<string, string | Uint8Array>): Promise<Buffer> {
+async function repackageZip(files: Map<string, string | Uint8Array>): Promise<Buffer> {
   const zip = new JSZip();
   for (const [path, content] of files) {
-    if (typeof content === "string") {
-      zip.file(path, content);
-    } else {
-      zip.file(path, content);
-    }
+    zip.file(path, content); // Automatically handles both String and Uint8Array perfectly
   }
-  return zip.generateAsync({ type: "nodebuffer" });
+  return await zip.generateAsync({ type: "nodebuffer" });
 }
